@@ -8,8 +8,9 @@ import psutil
 from io import FileIO
 from pypresence import Presence
 # custom
-from utility.network import Network
-from utility.multi_threading import myThread
+from classes.network import Network
+from classes.multi_threading import myThread
+from classes.discord_presence import Presence
 from conf import config_json
 
 # Create a new Presence
@@ -18,7 +19,7 @@ RPC.connect()
 
 # Local Network for Studio's Plugin
 LatestData = None
-LatestDataTick = -1 # Last time data was recieved from studio
+LastCheckTick = -1 # Last time data was recieved from studio
 
 class PresenceNetworkHost(Network):
     def getReturnData(self, address, data):
