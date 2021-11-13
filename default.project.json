@@ -1,0 +1,15 @@
+{
+  "name": "discord-presence",
+  "tree": {
+    "$className": "DataModel",
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "$ignoreUnknownInstances": true,
+      "Plugin": {
+        "$className": "Folder",
+        "$ignoreUnknownInstances": true,
+        "$path": "src_rojo"
+      }
+    }
+  }
+}

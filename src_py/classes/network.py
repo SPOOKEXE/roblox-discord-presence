@@ -3,6 +3,8 @@
 import socket
 import json
 import _thread
+import time
+import struct
 
 # class
 class Network:
@@ -19,18 +21,19 @@ class Network:
     __has_setup = False
     
     # Override this for custom behavior.
-    def getReturnData(receieved_data):
+    def getReturnData(self, addr, receieved_data):
         return json.dumps({"Result": "Accepted"})
 
     # Override this for custom behavior.
-    def handleReceivedData(receieved_data):
-        print("Recieved: ", receieved_data)
+    def handleReceivedData(self, receieved_data):
+        print("Recieved:", receieved_data)
 
     # On Incoming Data, check validility.
     def __onDataRecieve(self, address, data):
         returnData = json.dumps({"Result": "Denied"})
         if type(data) == dict:
             if 'ACCESS_KEY' in data.keys() and str(data['ACCESS_KEY']) == self.access_key:
+                print('valid')
                 self.handleReceivedData(data)
                 returnData = self.getReturnData(address, data)
         return returnData
@@ -39,16 +42,16 @@ class Network:
     def __setup_network_handle(self):
         while True:
             for sock in self.__sockets:
-               conn, addr = sock.accept()
-               data = conn.recv(512)
-               my_json = data.decode('utf8')
-               try:
-                   data = json.loads(my_json[my_json.find("{"):])
-               except:
-                   data = None
-               returnData = self.__onDataRecieve(addr, data)
-               conn.sendall(str.encode(str(returnData)))
-               conn.close()
+                conn, addr = sock.accept()
+                data = conn.recv(50000)
+                my_json = data.decode('utf-8')
+                try:
+                    data = json.loads(my_json[my_json.find("{"):])
+                except:
+                    data = None
+                returnData = self.__onDataRecieve(addr, data)
+                conn.sendall(str.encode(str(returnData)))
+                conn.close()
     
     # Setup the connection(s)
     def __setup(self):
@@ -61,6 +64,7 @@ class Network:
             newSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             newSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             newSocket.bind((self.ip, portNumber))
+            #newSocket.setblocking(0)
             newSocket.listen(1)
             self.__sockets.append(newSocket)
         # create a thread for handling the sockets
