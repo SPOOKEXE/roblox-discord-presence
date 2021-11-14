@@ -21,8 +21,9 @@ RPC.connect()
 
 # Local Network for Studio's Plugin
 LastDataRecieved = -1 # Last time data was recieved from studio
-LatestData = None
 ActiveNumberz = 0
+
+LatestData = None
 # activeOutgoing = {
 #     ScriptName = activeScript and activeScript.Name or false,
 #     ScriptSource = activeScript and activeScript.Source or false,
@@ -42,7 +43,6 @@ class PresenceNetworkHost(Network):
         global LastDataTick, LatestData
         LastDataTick = time.time()
         LatestData = receieved_data or None
-        print(LatestData)
         return super().handleReceivedData(receieved_data)
     def __init__(self, ports=None, ip=None, access_key=None):
         super().__init__(ports=ports, ip=ip, access_key=access_key)

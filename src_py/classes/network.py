@@ -6,6 +6,8 @@ import _thread
 import time
 import struct
 
+finishKey : str = 'DATA FINISHED"]'
+
 # class
 class Network:
     
@@ -38,17 +40,37 @@ class Network:
                 returnData = self.getReturnData(address, data)
         return returnData
     
+    # connection
+    def __recieveAll(self, connection) -> str:
+        data = []
+        while 1:
+            # recieve
+            chunk = connection.recv(512)
+            if not chunk:
+                break
+            chunk = chunk.decode('utf-8')
+            # append
+            data.append(chunk)
+            # check if finished
+            index = "".join(data).find(finishKey)
+            if index != -1:
+                break
+        return "".join(data)
+
     # Setup socket handling
     def __setup_network_handle(self):
         while True:
             for sock in self.__sockets:
                 conn, addr = sock.accept()
-                data = conn.recv(50000)
-                my_json = data.decode('utf-8')
+                data = self.__recieveAll(conn)
                 try:
-                    data = json.loads(my_json[my_json.find("{"):])
+                    startIndex = data.find("{")
+                    endIndex = data.find(',"DATA FINISHED"]')
+                    print(startIndex, data[startIndex:endIndex])
+                    data = json.loads(data[startIndex:endIndex])
                 except:
                     data = None
+                print(data)
                 returnData = self.__onDataRecieve(addr, data)
                 conn.sendall(str.encode(str(returnData)))
                 conn.close()

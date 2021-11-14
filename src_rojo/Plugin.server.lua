@@ -20,7 +20,6 @@ local activePromise : Promise? = nil
 
 local onDataUpdated : Signal.SignalClass = Signal.New("onDataUpdated")
 
-local startActive : number = tick()
 local activeSourceMaid = nil
 
 function getLines(s : string) : number
@@ -71,7 +70,6 @@ function UpdateData() : nil
     local activeScript : LuaSourceContainer = StudioService.ActiveScript
     SetupConnections(activeScript)
     print(activeScript)
-    startActive = tick()
     activeOutgoing = {
         ACCESS_KEY = Config.AccessKey,
         ScriptName = activeScript and activeScript.Name or false,
@@ -81,7 +79,7 @@ function UpdateData() : nil
         PlaceID = game.PlaceId,
         CreatorID = game.CreatorId,
         CreatorType = game.CreatorType.Name,
-        ActiveTime = startActive,
+        ActiveTime = tick(),
     }
     onDataUpdated:Fire()
 end
@@ -96,7 +94,7 @@ onDataUpdated:Connect(function()
     activePromise = Promise.try(function()
         local ReturnData : Dictionary? = nil
         hasResolved, errMsg = pcall(function()
-            ReturnData = HttpService:JSONDecode(MakeRequestAsync(Config.LocalHostIP, activeOutgoing).Body)
+            ReturnData = HttpService:JSONDecode(MakeRequestAsync(Config.LocalHostIP, {activeOutgoing, "DATA FINISHED"}).Body)
         end)
         if (not hasResolved) and errMsg then
            --warn(errMsg)
