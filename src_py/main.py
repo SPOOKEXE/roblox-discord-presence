@@ -28,11 +28,11 @@ LatestData = None
 #     ScriptName = activeScript and activeScript.Name or false,
 #     ScriptSource = activeScript and activeScript.Source or false,
 #     ScriptFullName = activeScript and activeScript:GetFullName() or false,
+#     ScriptClass = activeScript and activeScript.ClassName or false,
 #     PlaceName = game.Name,
 #     PlaceID = game.PlaceId,
 #     CreatorID = game.CreatorId,
 #     CreatorType = game.CreatorType.Name,
-#     ActiveTime = startActive,
 # }
 
 # Class
@@ -57,22 +57,36 @@ def SetBlankRPC() -> None:
         large_image = "robloxstudioicon"
     )
 
+def SetPlaceRPC() -> None:
+    global LatestData
+    RPC.update(
+        details = 'Editing Place: {}'.format(LatestData['PlaceName']), 
+        state = "No Active Script Editor",
+        start = int( time.time() ),
+        large_image = "robloxstudioicon"
+    )
+
 def SetDataRPC() -> None:
     global LatestData
     RPC.update(
-        details = 'Editing {}'.format(LatestData["ScriptName"]), 
-        state = "Lines: {}".format(str( CountLines(LatestData["ScriptSource"]) )),
-        start = LatestData['ActiveTime'],
+        details = '{} [{}] (Lines: {})'.format(LatestData["ScriptName"], LatestData["ScriptClass"][0], str( CountLines(LatestData["ScriptSource"]) )), 
+        state = "{} - {}".format( LatestData['ScriptFullName'].split(".")[0], LatestData['PlaceName'] ),
+        start = int( time.time() ),
         large_image = "robloxstudioicon"
     )
 
 def UpdateRPC() -> None:
     global LatestData, ActiveNumberz, LastDataRecieved
-    if (LatestData == None) or (LatestData["ScriptName"] == False):
+    if (LatestData == None) or (LatestData['PlaceName'] == False):
         if ActiveNumberz != 1:
             ActiveNumberz = 1
             print("reset")
             SetBlankRPC()
+        return
+    if LatestData['ScriptName'] == False:
+        if ActiveNumberz != 2:
+            ActiveNumberz = 2
+            SetPlaceRPC()
         return
     if ActiveNumberz == LatestData["ScriptSource"]:
         return

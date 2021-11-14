@@ -31,13 +31,13 @@ function Maid:Give(task) : nil
 end
 
 function Maid:Cleanup() : nil
-	for _, task in ipairs(self._tasks) do
-		if typeof(task) == 'RBXScriptConnection' then
-			task:Disconnect()
-		elseif typeof(task) == 'function' then
-			task.defer(task)
-		elseif task.Destroy then
-			task.defer(pcall, task.Destroy)
+	for _, _task in ipairs(self._tasks) do
+		if typeof(_task) == 'RBXScriptConnection' then
+			_task:Disconnect()
+		elseif typeof(_task) == 'function' then
+			task.defer(_task)
+		elseif _task.Destroy then
+			task.defer(pcall, _task.Destroy)
 		end
 	end
 	setmetatable(self, nil)

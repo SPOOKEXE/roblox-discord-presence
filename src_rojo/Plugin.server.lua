@@ -1,15 +1,17 @@
 
 type Dictionary = { [string] : any }
+type Array = { [number] : any }
 
 local HttpService : HttpService = game:GetService('HttpService')
 local SelectionService : Selection = game:GetService('Selection')
 local StudioService : StudioService = game:GetService('StudioService')
 local RunService : RunService = game:GetService('RunService')
+local MarketplaceService : MarketplaceService = game:GetService('MarketplaceService')
 
 local PluginFolder : Folder = script.Parent
-local Signal = require(PluginFolder.Classes.Signal)
-local Promise = require(PluginFolder.Classes.Promise)
-local Maid = require(PluginFolder.Classes.Maid)
+local Signal : Dictionary = require(PluginFolder.Classes.Signal)
+local Promise : Dictionary = require(PluginFolder.Classes.Promise)
+local Maid : Dictionary = require(PluginFolder.Classes.Maid)
 
 local plugin : Plugin = plugin
 
@@ -20,26 +22,26 @@ local activePromise : Promise? = nil
 
 local onDataUpdated : Signal.SignalClass = Signal.New("onDataUpdated")
 
-local activeSourceMaid = nil
+local activeSourceMaid : Dictionary = nil
 
 function getLines(s : string) : number
-    local lines = {};
-    local str = "";
+    local lines : Array = {}
+    local str : string = ""
     for i = 1, string.len(s.Source) do
     	if (string.sub(s.Source, i, i) == "\n") then
-	    	lines[#lines+1] = str;
-	    	str = "";
+	    	table.insert(lines, str)
+	    	str = ""
     	else
-	    	str = str..string.sub(s.Source, i, i);
+	    	str = str..string.sub(s.Source, i, i)
     	end
     end
 	if (str ~= "") then
-		lines[#lines+1] = str;
+        table.insert(lines, str)
 	end
-	return #lines;
+	return #lines
 end
 
-function MakeRequestAsync(URL : string, Body : string)
+function MakeRequestAsync(URL : string, Body : string) : (any, any)
     return HttpService:RequestAsync({
         Url = URL,
         Method = "POST",
@@ -48,7 +50,7 @@ function MakeRequestAsync(URL : string, Body : string)
     })
 end
 
-function SetupConnections(script : LuaSourceContainer)
+function SetupConnections(script : LuaSourceContainer) : nil
     if activeSourceMaid then
         activeSourceMaid:Cleanup()
         activeSourceMaid = nil
@@ -67,6 +69,7 @@ end
 
 function UpdateData() : nil
     task.wait()
+    local placeInfo : Dictionary = MarketplaceService:GetProductInfo(game.PlaceId)
     local activeScript : LuaSourceContainer = StudioService.ActiveScript
     SetupConnections(activeScript)
     print(activeScript)
@@ -75,11 +78,11 @@ function UpdateData() : nil
         ScriptName = activeScript and activeScript.Name or false,
         ScriptSource = activeScript and activeScript.Source or false,
         ScriptFullName = activeScript and activeScript:GetFullName() or false,
-        PlaceName = game.Name,
+        ScriptClass = activeScript and activeScript.ClassName or false,
+        PlaceName = placeInfo.Name,
         PlaceID = game.PlaceId,
         CreatorID = game.CreatorId,
-        CreatorType = game.CreatorType.Name,
-        ActiveTime = tick(),
+        CreatorType = game.CreatorType.Name
     }
     onDataUpdated:Fire()
 end
@@ -106,6 +109,23 @@ onDataUpdated:Connect(function()
 end)
 
 local pMaid = Maid.new()
+
+pcall(function()
+    game:BindToClose(function()
+        MakeRequestAsync(Config.LocalHostIP, {{
+            ACCESS_KEY = Config.AccessKey,
+            ScriptName = false,
+            ScriptSource = false,
+            ScriptFullName = false,
+            ScriptClass = false,
+            PlaceName = false,
+            PlaceID = false,
+            CreatorID = false,
+            CreatorType = false
+        }, "DATA FINISHED"})
+    end)
+end)
+
 pMaid:Give(StudioService:GetPropertyChangedSignal('ActiveScript'):Connect(UpdateData))
 pMaid:Give(onDataUpdated)
 pMaid:Give(plugin.Unloading:Connect(function()
@@ -114,4 +134,4 @@ end))
 pMaid:Give(plugin.Deactivation:Connect(function()
     pMaid:Cleanup()
 end))
-task.defer(UpdateData)
+task.delay(2, UpdateData)
