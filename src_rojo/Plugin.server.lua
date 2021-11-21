@@ -68,28 +68,24 @@ function SetupConnections(script : LuaSourceContainer) : nil
 end
 
 function UpdateData() : nil
-    task.wait()
-
-    local placeInfo : Dictionary? = nil
     Promise.try(function()
-        placeInfo = MarketplaceService:GetProductInfo(game.PlaceId)
+        return MarketplaceService:GetProductInfo(game.PlaceId)
+    end):andThen(function(placeData)
+        local activeScript : LuaSourceContainer = StudioService.ActiveScript
+        SetupConnections(activeScript)
+        activeOutgoing = {
+            ACCESS_KEY = Config.AccessKey,
+            ScriptName = activeScript and activeScript.Name or false,
+            ScriptSource = activeScript and activeScript.Source or false,
+            ScriptFullName = activeScript and activeScript:GetFullName() or false,
+            ScriptClass = activeScript and activeScript.ClassName or false,
+            PlaceName = placeData and placeData.Name or "No Place Data",
+            PlaceID = game.PlaceId,
+            CreatorID = game.CreatorId,
+            CreatorType = game.CreatorType.Name
+        }
+        onDataUpdated:Fire()
     end)
-
-    local activeScript : LuaSourceContainer = StudioService.ActiveScript
-    SetupConnections(activeScript)
-    print(activeScript)
-    activeOutgoing = {
-        ACCESS_KEY = Config.AccessKey,
-        ScriptName = activeScript and activeScript.Name or false,
-        ScriptSource = activeScript and activeScript.Source or false,
-        ScriptFullName = activeScript and activeScript:GetFullName() or false,
-        ScriptClass = activeScript and activeScript.ClassName or false,
-        PlaceName = placeInfo and placeInfo.Name or "No Place Data",
-        PlaceID = game.PlaceId,
-        CreatorID = game.CreatorId,
-        CreatorType = game.CreatorType.Name
-    }
-    onDataUpdated:Fire()
 end
 
 onDataUpdated:Connect(function()
