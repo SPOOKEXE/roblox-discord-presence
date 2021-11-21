@@ -1,0 +1,2403 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+	<External>null</External>
+	<External>nil</External>
+	<Item class="Folder" referent="RBXF4741BBBF25F4E6B8E505F9CCF47E1B4">
+		<Properties>
+			<BinaryString name="AttributesSerialize"></BinaryString>
+			<string name="Name">Plugin</string>
+			<int64 name="SourceAssetId">-1</int64>
+			<BinaryString name="Tags"></BinaryString>
+		</Properties>
+		<Item class="Folder" referent="RBX40F141F504374FE898CCA4CCF672D97B">
+			<Properties>
+				<BinaryString name="AttributesSerialize"></BinaryString>
+				<string name="Name">Classes</string>
+				<int64 name="SourceAssetId">-1</int64>
+				<BinaryString name="Tags"></BinaryString>
+			</Properties>
+			<Item class="ModuleScript" referent="RBX45E9D7E01FF5442AB1AE399B29D6D96E">
+				<Properties>
+					<BinaryString name="AttributesSerialize"></BinaryString>
+					<Content name="LinkedSource"><null></null></Content>
+					<string name="Name">Maid</string>
+					<string name="ScriptGuid">{3B9DCF44-F4B4-4E3B-AFD4-C2BFAC9BC22A}</string>
+					<ProtectedString name="Source"><![CDATA[-- Rewritten by SPOOK_EXE
+-- Other one was annoying to look at :-)
+
+local validTypeTask = function(task) : boolean
+	return (typeof(task) == 'RBXScriptConnection') or (typeof(task) == 'function') or task.Destroy
+end
+
+export type MaidTask = RBXScriptConnection | () -> nil
+export type Maid = { Cleanup : (nil) -> nil, Give : (MaidTask) -> nil }
+
+local Maid = {ClassName = 'Maid'}
+Maid.__index = Maid
+
+function Maid.new() : Maid
+	return setmetatable( { _tasks = {} } , Maid )
+end
+
+function Maid:__newindex(t, index, value) : nil
+	if index == '_tasks' or t == self._tasks then
+		error('Cannot edit _tasks table. Use Maid:Give(task)')
+	end
+	if validTypeTask(value) then
+		table.insert(self._tasks, value)
+	end
+end
+
+function Maid:Give(task) : nil
+	if validTypeTask(task) then
+		table.insert(self._tasks, task)
+	end
+end
+
+function Maid:Cleanup() : nil
+	for _, _task in ipairs(self._tasks) do
+		if typeof(_task) == 'RBXScriptConnection' then
+			_task:Disconnect()
+		elseif typeof(_task) == 'function' then
+			task.defer(_task)
+		elseif _task.Destroy then
+			task.defer(pcall, _task.Destroy)
+		end
+	end
+	setmetatable(self, nil)
+end
+
+Maid.Destroy = Maid.Cleanup
+
+return Maid]]></ProtectedString>
+					<int64 name="SourceAssetId">-1</int64>
+					<BinaryString name="Tags"></BinaryString>
+				</Properties>
+			</Item>
+			<Item class="ModuleScript" referent="RBX77CC21373F5C4B5FB9EBAE7810A056E2">
+				<Properties>
+					<BinaryString name="AttributesSerialize"></BinaryString>
+					<Content name="LinkedSource"><null></null></Content>
+					<string name="Name">Promise</string>
+					<string name="ScriptGuid">{765CBD8F-4B43-416E-8B3D-6564D5669D37}</string>
+					<ProtectedString name="Source"><![CDATA[--[[
+	An implementation of Promises similar to Promise/A+.
+]]
+
+local ERROR_NON_PROMISE_IN_LIST = "Non-promise value passed into %s at index %s"
+local ERROR_NON_LIST = "Please pass a list of promises to %s"
+local ERROR_NON_FUNCTION = "Please pass a handler function to %s!"
+local MODE_KEY_METATABLE = {__mode = "k"}
+
+--[[
+	Creates an enum dictionary with some metamethods to prevent common mistakes.
+]]
+local function makeEnum(enumName, members)
+	local enum = {}
+
+	for _, memberName in ipairs(members) do
+		enum[memberName] = memberName
+	end
+
+	return setmetatable(enum, {
+		__index = function(_, k)
+			error(string.format("%s is not in %s!", k, enumName), 2)
+		end,
+		__newindex = function()
+			error(string.format("Creating new members in %s is not allowed!", enumName), 2)
+		end,
+	})
+end
+
+--[[
+	An object to represent runtime errors that occur during execution.
+	Promises that experience an error like this will be rejected with
+	an instance of this object.
+]]
+local Error do
+	Error = {
+		Kind = makeEnum("Promise.Error.Kind", {
+			"ExecutionError",
+			"AlreadyCancelled",
+			"NotResolvedInTime",
+			"TimedOut",
+		}),
+	}
+	Error.__index = Error
+
+	function Error.new(options, parent)
+		options = options or {}
+		return setmetatable({
+			error = tostring(options.error) or "[This error has no error text.]",
+			trace = options.trace,
+			context = options.context,
+			kind = options.kind,
+			parent = parent,
+			createdTick = os.clock(),
+			createdTrace = debug.traceback(),
+		}, Error)
+	end
+
+	function Error.is(anything)
+		if type(anything) == "table" then
+			local metatable = getmetatable(anything)
+
+			if type(metatable) == "table" then
+				return rawget(anything, "error") ~= nil and type(rawget(metatable, "extend")) == "function"
+			end
+		end
+
+		return false
+	end
+
+	function Error.isKind(anything, kind)
+		assert(kind ~= nil, "Argument #2 to Promise.Error.isKind must not be nil")
+
+		return Error.is(anything) and anything.kind == kind
+	end
+
+	function Error:extend(options)
+		options = options or {}
+
+		options.kind = options.kind or self.kind
+
+		return Error.new(options, self)
+	end
+
+	function Error:getErrorChain()
+		local runtimeErrors = { self }
+
+		while runtimeErrors[#runtimeErrors].parent do
+			table.insert(runtimeErrors, runtimeErrors[#runtimeErrors].parent)
+		end
+
+		return runtimeErrors
+	end
+
+	function Error:__tostring()
+		local errorStrings = {
+			string.format("-- Promise.Error(%s) --", self.kind or "?"),
+		}
+
+		for _, runtimeError in ipairs(self:getErrorChain()) do
+			table.insert(errorStrings, table.concat({
+				runtimeError.trace or runtimeError.error,
+				runtimeError.context,
+			}, "\n"))
+		end
+
+		return table.concat(errorStrings, "\n")
+	end
+end
+
+--[[
+	Packs a number of arguments into a table and returns its length.
+
+	Used to cajole varargs without dropping sparse values.
+]]
+local function pack(...)
+	return select("#", ...), { ... }
+end
+
+--[[
+	Returns first value (success), and packs all following values.
+]]
+local function packResult(success, ...)
+	return success, select("#", ...), { ... }
+end
+
+
+local function makeErrorHandler(traceback)
+	assert(traceback ~= nil)
+
+	return function(err)
+		-- If the error object is already a table, forward it directly.
+		-- Should we extend the error here and add our own trace?
+
+		if type(err) == "table" then
+			return err
+		end
+
+		return Error.new({
+			error = err,
+			kind = Error.Kind.ExecutionError,
+			trace = debug.traceback(tostring(err), 2),
+			context = "Promise created at:\n\n" .. traceback,
+		})
+	end
+end
+
+--[[
+	Calls a Promise executor with error handling.
+]]
+local function runExecutor(traceback, callback, ...)
+	return packResult(xpcall(callback, makeErrorHandler(traceback), ...))
+end
+
+--[[
+	Creates a function that invokes a callback with correct error handling and
+	resolution mechanisms.
+]]
+local function createAdvancer(traceback, callback, resolve, reject)
+	return function(...)
+		local ok, resultLength, result = runExecutor(traceback, callback, ...)
+
+		if ok then
+			resolve(unpack(result, 1, resultLength))
+		else
+			reject(result[1])
+		end
+	end
+end
+
+local function isEmpty(t)
+	return next(t) == nil
+end
+
+local Promise = {
+	Error = Error,
+	Status = makeEnum("Promise.Status", {"Started", "Resolved", "Rejected", "Cancelled"}),
+	_getTime = os.clock,
+	_timeEvent = game:GetService("RunService").Heartbeat,
+}
+Promise.prototype = {}
+Promise.__index = Promise.prototype
+
+--[[
+	Constructs a new Promise with the given initializing callback.
+
+	This is generally only called when directly wrapping a non-promise API into
+	a promise-based version.
+
+	The callback will receive 'resolve' and 'reject' methods, used to start
+	invoking the promise chain.
+
+	Second parameter, parent, is used internally for tracking the "parent" in a
+	promise chain. External code shouldn't need to worry about this.
+]]
+function Promise._new(traceback, callback, parent)
+	if parent ~= nil and not Promise.is(parent) then
+		error("Argument #2 to Promise.new must be a promise or nil", 2)
+	end
+
+	local self = {
+		-- Used to locate where a promise was created
+		_source = traceback,
+
+		_status = Promise.Status.Started,
+
+		-- A table containing a list of all results, whether success or failure.
+		-- Only valid if _status is set to something besides Started
+		_values = nil,
+
+		-- Lua doesn't like sparse arrays very much, so we explicitly store the
+		-- length of _values to handle middle nils.
+		_valuesLength = -1,
+
+		-- Tracks if this Promise has no error observers..
+		_unhandledRejection = true,
+
+		-- Queues representing functions we should invoke when we update!
+		_queuedResolve = {},
+		_queuedReject = {},
+		_queuedFinally = {},
+
+		-- The function to run when/if this promise is cancelled.
+		_cancellationHook = nil,
+
+		-- The "parent" of this promise in a promise chain. Required for
+		-- cancellation propagation upstream.
+		_parent = parent,
+
+		-- Consumers are Promises that have chained onto this one.
+		-- We track them for cancellation propagation downstream.
+		_consumers = setmetatable({}, MODE_KEY_METATABLE),
+	}
+
+	if parent and parent._status == Promise.Status.Started then
+		parent._consumers[self] = true
+	end
+
+	setmetatable(self, Promise)
+
+	local function resolve(...)
+		self:_resolve(...)
+	end
+
+	local function reject(...)
+		self:_reject(...)
+	end
+
+	local function onCancel(cancellationHook)
+		if cancellationHook then
+			if self._status == Promise.Status.Cancelled then
+				cancellationHook()
+			else
+				self._cancellationHook = cancellationHook
+			end
+		end
+
+		return self._status == Promise.Status.Cancelled
+	end
+
+	task.defer(function()
+		local ok, _, result = runExecutor(
+			self._source,
+			callback,
+			resolve,
+			reject,
+			onCancel
+		)
+
+		if not ok then
+			reject(result[1])
+		end
+	end)
+
+	return self
+end
+
+function Promise.new(executor)
+	return Promise._new(debug.traceback(nil, 2), executor)
+end
+
+function Promise:__tostring()
+	return string.format("Promise(%s)", self:getStatus())
+end
+
+--[[
+	Promise.new, except pcall on a new thread is automatic.
+]]
+function Promise.defer(callback)
+	local traceback = debug.traceback(nil, 2)
+	local promise
+	promise = Promise._new(traceback, function(resolve, reject, onCancel)
+		local connection
+		connection = Promise._timeEvent:Connect(function()
+			connection:Disconnect()
+			local ok, _, result = runExecutor(traceback, callback, resolve, reject, onCancel)
+
+			if not ok then
+				reject(result[1])
+			end
+		end)
+	end)
+
+	return promise
+end
+
+-- Backwards compatibility
+Promise.async = Promise.defer
+
+--[[
+	Create a promise that represents the immediately resolved value.
+]]
+function Promise.resolve(...)
+	local length, values = pack(...)
+	return Promise._new(debug.traceback(nil, 2), function(resolve)
+		resolve(unpack(values, 1, length))
+	end)
+end
+
+--[[
+	Create a promise that represents the immediately rejected value.
+]]
+function Promise.reject(...)
+	local length, values = pack(...)
+	return Promise._new(debug.traceback(nil, 2), function(_, reject)
+		reject(unpack(values, 1, length))
+	end)
+end
+
+--[[
+	Runs a non-promise-returning function as a Promise with the
+  given arguments.
+]]
+function Promise._try(traceback, callback, ...)
+	local valuesLength, values = pack(...)
+
+	return Promise._new(traceback, function(resolve)
+		resolve(callback(unpack(values, 1, valuesLength)))
+	end)
+end
+
+--[[
+	Begins a Promise chain, turning synchronous errors into rejections.
+]]
+function Promise.try(...)
+	return Promise._try(debug.traceback(nil, 2), ...)
+end
+
+--[[
+	Returns a new promise that:
+		* is resolved when all input promises resolve
+		* is rejected if ANY input promises reject
+]]
+function Promise._all(traceback, promises, amount)
+	if type(promises) ~= "table" then
+		error(string.format(ERROR_NON_LIST, "Promise.all"), 3)
+	end
+
+	-- We need to check that each value is a promise here so that we can produce
+	-- a proper error rather than a rejected promise with our error.
+	for i, promise in pairs(promises) do
+		if not Promise.is(promise) then
+			error(string.format(ERROR_NON_PROMISE_IN_LIST, "Promise.all", tostring(i)), 3)
+		end
+	end
+
+	-- If there are no values then return an already resolved promise.
+	if #promises == 0 or amount == 0 then
+		return Promise.resolve({})
+	end
+
+	return Promise._new(traceback, function(resolve, reject, onCancel)
+		-- An array to contain our resolved values from the given promises.
+		local resolvedValues = {}
+		local newPromises = {}
+
+		-- Keep a count of resolved promises because just checking the resolved
+		-- values length wouldn't account for promises that resolve with nil.
+		local resolvedCount = 0
+		local rejectedCount = 0
+		local done = false
+
+		local function cancel()
+			for _, promise in ipairs(newPromises) do
+				promise:cancel()
+			end
+		end
+
+		-- Called when a single value is resolved and resolves if all are done.
+		local function resolveOne(i, ...)
+			if done then
+				return
+			end
+
+			resolvedCount = resolvedCount + 1
+
+			if amount == nil then
+				resolvedValues[i] = ...
+			else
+				resolvedValues[resolvedCount] = ...
+			end
+
+			if resolvedCount >= (amount or #promises) then
+				done = true
+				resolve(resolvedValues)
+				cancel()
+			end
+		end
+
+		onCancel(cancel)
+
+		-- We can assume the values inside `promises` are all promises since we
+		-- checked above.
+		for i, promise in ipairs(promises) do
+			newPromises[i] = promise:andThen(
+				function(...)
+					resolveOne(i, ...)
+				end,
+				function(...)
+					rejectedCount = rejectedCount + 1
+
+					if amount == nil or #promises - rejectedCount < amount then
+						cancel()
+						done = true
+
+						reject(...)
+					end
+				end
+			)
+		end
+
+		if done then
+			cancel()
+		end
+	end)
+end
+
+function Promise.all(promises)
+	return Promise._all(debug.traceback(nil, 2), promises)
+end
+
+function Promise.fold(list, callback, initialValue)
+	assert(type(list) == "table", "Bad argument #1 to Promise.fold: must be a table")
+	assert(type(callback) == "function", "Bad argument #2 to Promise.fold: must be a function")
+
+	local accumulator = Promise.resolve(initialValue)
+	return Promise.each(list, function(resolvedElement, i)
+		accumulator = accumulator:andThen(function(previousValueResolved)
+			return callback(previousValueResolved, resolvedElement, i)
+		end)
+	end):andThenReturn(accumulator)
+end
+
+function Promise.some(promises, amount)
+	assert(type(amount) == "number", "Bad argument #2 to Promise.some: must be a number")
+
+	return Promise._all(debug.traceback(nil, 2), promises, amount)
+end
+
+function Promise.any(promises)
+	return Promise._all(debug.traceback(nil, 2), promises, 1):andThen(function(values)
+		return values[1]
+	end)
+end
+
+function Promise.allSettled(promises)
+	if type(promises) ~= "table" then
+		error(string.format(ERROR_NON_LIST, "Promise.allSettled"), 2)
+	end
+
+	-- We need to check that each value is a promise here so that we can produce
+	-- a proper error rather than a rejected promise with our error.
+	for i, promise in pairs(promises) do
+		if not Promise.is(promise) then
+			error(string.format(ERROR_NON_PROMISE_IN_LIST, "Promise.allSettled", tostring(i)), 2)
+		end
+	end
+
+	-- If there are no values then return an already resolved promise.
+	if #promises == 0 then
+		return Promise.resolve({})
+	end
+
+	return Promise._new(debug.traceback(nil, 2), function(resolve, _, onCancel)
+		-- An array to contain our resolved values from the given promises.
+		local fates = {}
+		local newPromises = {}
+
+		-- Keep a count of resolved promises because just checking the resolved
+		-- values length wouldn't account for promises that resolve with nil.
+		local finishedCount = 0
+
+		-- Called when a single value is resolved and resolves if all are done.
+		local function resolveOne(i, ...)
+			finishedCount = finishedCount + 1
+
+			fates[i] = ...
+
+			if finishedCount >= #promises then
+				resolve(fates)
+			end
+		end
+
+		onCancel(function()
+			for _, promise in ipairs(newPromises) do
+				promise:cancel()
+			end
+		end)
+
+		-- We can assume the values inside `promises` are all promises since we
+		-- checked above.
+		for i, promise in ipairs(promises) do
+			newPromises[i] = promise:finally(
+				function(...)
+					resolveOne(i, ...)
+				end
+			)
+		end
+	end)
+end
+
+--[[
+	Races a set of Promises and returns the first one that resolves,
+	cancelling the others.
+]]
+function Promise.race(promises)
+	assert(type(promises) == "table", string.format(ERROR_NON_LIST, "Promise.race"))
+
+	for i, promise in pairs(promises) do
+		assert(Promise.is(promise), string.format(ERROR_NON_PROMISE_IN_LIST, "Promise.race", tostring(i)))
+	end
+
+	return Promise._new(debug.traceback(nil, 2), function(resolve, reject, onCancel)
+		local newPromises = {}
+		local finished = false
+
+		local function cancel()
+			for _, promise in ipairs(newPromises) do
+				promise:cancel()
+			end
+		end
+
+		local function finalize(callback)
+			return function (...)
+				cancel()
+				finished = true
+				return callback(...)
+			end
+		end
+
+		if onCancel(finalize(reject)) then
+			return
+		end
+
+		for i, promise in ipairs(promises) do
+			newPromises[i] = promise:andThen(finalize(resolve), finalize(reject))
+		end
+
+		if finished then
+			cancel()
+		end
+	end)
+end
+
+--[[
+	Iterates serially over the given an array of values, calling the predicate callback on each before continuing.
+	If the predicate returns a Promise, we wait for that Promise to resolve before continuing to the next item
+	in the array. If the Promise the predicate returns rejects, the Promise from Promise.each is also rejected with
+	the same value.
+
+	Returns a Promise containing an array of the return values from the predicate for each item in the original list.
+]]
+function Promise.each(list, predicate)
+	assert(type(list) == "table", string.format(ERROR_NON_LIST, "Promise.each"))
+	assert(type(predicate) == "function", string.format(ERROR_NON_FUNCTION, "Promise.each"))
+
+	return Promise._new(debug.traceback(nil, 2), function(resolve, reject, onCancel)
+		local results = {}
+		local promisesToCancel = {}
+
+		local cancelled = false
+
+		local function cancel()
+			for _, promiseToCancel in ipairs(promisesToCancel) do
+				promiseToCancel:cancel()
+			end
+		end
+
+		onCancel(function()
+			cancelled = true
+
+			cancel()
+		end)
+
+		-- We need to preprocess the list of values and look for Promises.
+		-- If we find some, we must register our andThen calls now, so that those Promises have a consumer
+		-- from us registered. If we don't do this, those Promises might get cancelled by something else
+		-- before we get to them in the series because it's not possible to tell that we plan to use it
+		-- unless we indicate it here.
+
+		local preprocessedList = {}
+
+		for index, value in ipairs(list) do
+			if Promise.is(value) then
+				if value:getStatus() == Promise.Status.Cancelled then
+					cancel()
+					return reject(Error.new({
+						error = "Promise is cancelled",
+						kind = Error.Kind.AlreadyCancelled,
+						context = string.format(
+							"The Promise that was part of the array at index %d passed into Promise.each was already cancelled when Promise.each began.\n\nThat Promise was created at:\n\n%s",
+							index,
+							value._source
+						),
+					}))
+				elseif value:getStatus() == Promise.Status.Rejected then
+					cancel()
+					return reject(select(2, value:await()))
+				end
+
+				-- Chain a new Promise from this one so we only cancel ours
+				local ourPromise = value:andThen(function(...)
+					return ...
+				end)
+
+				table.insert(promisesToCancel, ourPromise)
+				preprocessedList[index] = ourPromise
+			else
+				preprocessedList[index] = value
+			end
+		end
+
+		for index, value in ipairs(preprocessedList) do
+			if Promise.is(value) then
+				local success
+				success, value = value:await()
+
+				if not success then
+					cancel()
+					return reject(value)
+				end
+			end
+
+			if cancelled then
+				return
+			end
+
+			local predicatePromise = Promise.resolve(predicate(value, index))
+
+			table.insert(promisesToCancel, predicatePromise)
+
+			local success, result = predicatePromise:await()
+
+			if not success then
+				cancel()
+				return reject(result)
+			end
+
+			results[index] = result
+		end
+
+		resolve(results)
+	end)
+end
+
+--[[
+	Is the given object a Promise instance?
+]]
+function Promise.is(object)
+	if type(object) ~= "table" then
+		return false
+	end
+
+	local objectMetatable = getmetatable(object)
+
+	if objectMetatable == Promise then
+		-- The Promise came from this library.
+		return true
+	elseif objectMetatable == nil then
+		-- No metatable, but we should still chain onto tables with andThen methods
+		return type(object.andThen) == "function"
+	elseif
+		type(objectMetatable) == "table"
+		and type(rawget(objectMetatable, "__index")) == "table"
+		and type(rawget(rawget(objectMetatable, "__index"), "andThen")) == "function"
+	then
+		-- Maybe this came from a different or older Promise library.
+		return true
+	end
+
+	return false
+end
+
+--[[
+	Converts a yielding function into a Promise-returning one.
+]]
+function Promise.promisify(callback)
+	return function(...)
+		return Promise._try(debug.traceback(nil, 2), callback, ...)
+	end
+end
+
+--[[
+	Creates a Promise that resolves after given number of seconds.
+]]
+do
+	-- uses a sorted doubly linked list (queue) to achieve O(1) remove operations and O(n) for insert
+
+	-- the initial node in the linked list
+	local first
+	local connection
+
+	function Promise.delay(seconds)
+		assert(type(seconds) == "number", "Bad argument #1 to Promise.delay, must be a number.")
+		-- If seconds is -INF, INF, NaN, or less than 1 / 60, assume seconds is 1 / 60.
+		-- This mirrors the behavior of wait()
+		if not (seconds >= 1 / 60) or seconds == math.huge then
+			seconds = 1 / 60
+		end
+
+		return Promise._new(debug.traceback(nil, 2), function(resolve, _, onCancel)
+			local startTime = Promise._getTime()
+			local endTime = startTime + seconds
+
+			local node = {
+				resolve = resolve,
+				startTime = startTime,
+				endTime = endTime,
+			}
+
+			if connection == nil then -- first is nil when connection is nil
+				first = node
+				connection = Promise._timeEvent:Connect(function()
+					local threadStart = Promise._getTime()
+
+					while first ~= nil and first.endTime < threadStart do
+						local current = first
+						first = current.next
+
+						if first == nil then
+							connection:Disconnect()
+							connection = nil
+						else
+							first.previous = nil
+						end
+
+						current.resolve(Promise._getTime() - current.startTime)
+					end
+				end)
+			else -- first is non-nil
+				if first.endTime < endTime then -- if `node` should be placed after `first`
+					-- we will insert `node` between `current` and `next`
+					-- (i.e. after `current` if `next` is nil)
+					local current = first
+					local next = current.next
+
+					while next ~= nil and next.endTime < endTime do
+						current = next
+						next = current.next
+					end
+
+					-- `current` must be non-nil, but `next` could be `nil` (i.e. last item in list)
+					current.next = node
+					node.previous = current
+
+					if next ~= nil then
+						node.next = next
+						next.previous = node
+					end
+				else
+					-- set `node` to `first`
+					node.next = first
+					first.previous = node
+					first = node
+				end
+			end
+
+			onCancel(function()
+				-- remove node from queue
+				local next = node.next
+
+				if first == node then
+					if next == nil then -- if `node` is the first and last
+						connection:Disconnect()
+						connection = nil
+					else -- if `node` is `first` and not the last
+						next.previous = nil
+					end
+					first = next
+				else
+					local previous = node.previous
+					-- since `node` is not `first`, then we know `previous` is non-nil
+					previous.next = next
+
+					if next ~= nil then
+						next.previous = previous
+					end
+				end
+			end)
+		end)
+	end
+end
+
+--[[
+	Rejects the promise after `seconds` seconds.
+]]
+function Promise.prototype:timeout(seconds, rejectionValue)
+	local traceback = debug.traceback(nil, 2)
+
+	return Promise.race({
+		Promise.delay(seconds):andThen(function()
+			return Promise.reject(rejectionValue == nil and Error.new({
+				kind = Error.Kind.TimedOut,
+				error = "Timed out",
+				context = string.format(
+					"Timeout of %d seconds exceeded.\n:timeout() called at:\n\n%s",
+					seconds,
+					traceback
+				),
+			}) or rejectionValue)
+		end),
+		self,
+	})
+end
+
+function Promise.prototype:getStatus()
+	return self._status
+end
+
+--[[
+	Creates a new promise that receives the result of this promise.
+
+	The given callbacks are invoked depending on that result.
+]]
+function Promise.prototype:_andThen(traceback, successHandler, failureHandler)
+	self._unhandledRejection = false
+
+	-- Create a new promise to follow this part of the chain
+	return Promise._new(traceback, function(resolve, reject)
+		-- Our default callbacks just pass values onto the next promise.
+		-- This lets success and failure cascade correctly!
+
+		local successCallback = resolve
+		if successHandler then
+			successCallback = createAdvancer(
+				traceback,
+				successHandler,
+				resolve,
+				reject
+			)
+		end
+
+		local failureCallback = reject
+		if failureHandler then
+			failureCallback = createAdvancer(
+				traceback,
+				failureHandler,
+				resolve,
+				reject
+			)
+		end
+
+		if self._status == Promise.Status.Started then
+			-- If we haven't resolved yet, put ourselves into the queue
+			table.insert(self._queuedResolve, successCallback)
+			table.insert(self._queuedReject, failureCallback)
+		elseif self._status == Promise.Status.Resolved then
+			-- This promise has already resolved! Trigger success immediately.
+			successCallback(unpack(self._values, 1, self._valuesLength))
+		elseif self._status == Promise.Status.Rejected then
+			-- This promise died a terrible death! Trigger failure immediately.
+			failureCallback(unpack(self._values, 1, self._valuesLength))
+		elseif self._status == Promise.Status.Cancelled then
+			-- We don't want to call the success handler or the failure handler,
+			-- we just reject this promise outright.
+			reject(Error.new({
+				error = "Promise is cancelled",
+				kind = Error.Kind.AlreadyCancelled,
+				context = "Promise created at\n\n" .. traceback,
+			}))
+		end
+	end, self)
+end
+
+function Promise.prototype:andThen(successHandler, failureHandler)
+	assert(
+		successHandler == nil or type(successHandler) == "function",
+		string.format(ERROR_NON_FUNCTION, "Promise:andThen")
+	)
+	assert(
+		failureHandler == nil or type(failureHandler) == "function",
+		string.format(ERROR_NON_FUNCTION, "Promise:andThen")
+	)
+
+	return self:_andThen(debug.traceback(nil, 2), successHandler, failureHandler)
+end
+
+--[[
+	Used to catch any errors that may have occurred in the promise.
+]]
+function Promise.prototype:catch(failureCallback)
+	assert(
+		failureCallback == nil or type(failureCallback) == "function",
+		string.format(ERROR_NON_FUNCTION, "Promise:catch")
+	)
+	return self:_andThen(debug.traceback(nil, 2), nil, failureCallback)
+end
+
+--[[
+	Like andThen, but the value passed into the handler is also the
+	value returned from the handler.
+]]
+function Promise.prototype:tap(tapCallback)
+	assert(type(tapCallback) == "function", string.format(ERROR_NON_FUNCTION, "Promise:tap"))
+	return self:_andThen(debug.traceback(nil, 2), function(...)
+		local callbackReturn = tapCallback(...)
+
+		if Promise.is(callbackReturn) then
+			local length, values = pack(...)
+			return callbackReturn:andThen(function()
+				return unpack(values, 1, length)
+			end)
+		end
+
+		return ...
+	end)
+end
+
+--[[
+	Calls a callback on `andThen` with specific arguments.
+]]
+function Promise.prototype:andThenCall(callback, ...)
+	assert(type(callback) == "function", string.format(ERROR_NON_FUNCTION, "Promise:andThenCall"))
+	local length, values = pack(...)
+	return self:_andThen(debug.traceback(nil, 2), function()
+		return callback(unpack(values, 1, length))
+	end)
+end
+
+--[[
+	Shorthand for an andThen handler that returns the given value.
+]]
+function Promise.prototype:andThenReturn(...)
+	local length, values = pack(...)
+	return self:_andThen(debug.traceback(nil, 2), function()
+		return unpack(values, 1, length)
+	end)
+end
+
+--[[
+	Cancels the promise, disallowing it from rejecting or resolving, and calls
+	the cancellation hook if provided.
+]]
+function Promise.prototype:cancel()
+	if self._status ~= Promise.Status.Started then
+		return
+	end
+
+	self._status = Promise.Status.Cancelled
+
+	if self._cancellationHook then
+		self._cancellationHook()
+	end
+
+	if self._parent then
+		self._parent:_consumerCancelled(self)
+	end
+
+	for child in pairs(self._consumers) do
+		child:cancel()
+	end
+
+	self:_finalize()
+end
+
+--[[
+	Used to decrease the number of consumers by 1, and if there are no more,
+	cancel this promise.
+]]
+function Promise.prototype:_consumerCancelled(consumer)
+	if self._status ~= Promise.Status.Started then
+		return
+	end
+
+	self._consumers[consumer] = nil
+
+	if next(self._consumers) == nil then
+		self:cancel()
+	end
+end
+
+--[[
+	Used to set a handler for when the promise resolves, rejects, or is
+	cancelled. Returns a new promise chained from this promise.
+]]
+function Promise.prototype:_finally(traceback, finallyHandler, onlyOk)
+	if not onlyOk then
+		self._unhandledRejection = false
+	end
+
+	-- Return a promise chained off of this promise
+	return Promise._new(traceback, function(resolve, reject)
+		local finallyCallback = resolve
+		if finallyHandler then
+			finallyCallback = createAdvancer(
+				traceback,
+				finallyHandler,
+				resolve,
+				reject
+			)
+		end
+
+		if onlyOk then
+			local callback = finallyCallback
+			finallyCallback = function(...)
+				if self._status == Promise.Status.Rejected then
+					return resolve(self)
+				end
+
+				return callback(...)
+			end
+		end
+
+		if self._status == Promise.Status.Started then
+			-- The promise is not settled, so queue this.
+			table.insert(self._queuedFinally, finallyCallback)
+		else
+			-- The promise already settled or was cancelled, run the callback now.
+			finallyCallback(self._status)
+		end
+	end, self)
+end
+
+function Promise.prototype:finally(finallyHandler)
+	assert(
+		finallyHandler == nil or type(finallyHandler) == "function",
+		string.format(ERROR_NON_FUNCTION, "Promise:finally")
+	)
+	return self:_finally(debug.traceback(nil, 2), finallyHandler)
+end
+
+--[[
+	Calls a callback on `finally` with specific arguments.
+]]
+function Promise.prototype:finallyCall(callback, ...)
+	assert(type(callback) == "function", string.format(ERROR_NON_FUNCTION, "Promise:finallyCall"))
+	local length, values = pack(...)
+	return self:_finally(debug.traceback(nil, 2), function()
+		return callback(unpack(values, 1, length))
+	end)
+end
+
+--[[
+	Shorthand for a finally handler that returns the given value.
+]]
+function Promise.prototype:finallyReturn(...)
+	local length, values = pack(...)
+	return self:_finally(debug.traceback(nil, 2), function()
+		return unpack(values, 1, length)
+	end)
+end
+
+--[[
+	Similar to finally, except rejections are propagated through it.
+]]
+function Promise.prototype:done(finallyHandler)
+	assert(
+		finallyHandler == nil or type(finallyHandler) == "function",
+		string.format(ERROR_NON_FUNCTION, "Promise:done")
+	)
+	return self:_finally(debug.traceback(nil, 2), finallyHandler, true)
+end
+
+--[[
+	Calls a callback on `done` with specific arguments.
+]]
+function Promise.prototype:doneCall(callback, ...)
+	assert(type(callback) == "function", string.format(ERROR_NON_FUNCTION, "Promise:doneCall"))
+	local length, values = pack(...)
+	return self:_finally(debug.traceback(nil, 2), function()
+		return callback(unpack(values, 1, length))
+	end, true)
+end
+
+--[[
+	Shorthand for a done handler that returns the given value.
+]]
+function Promise.prototype:doneReturn(...)
+	local length, values = pack(...)
+	return self:_finally(debug.traceback(nil, 2), function()
+		return unpack(values, 1, length)
+	end, true)
+end
+
+--[[
+	Yield until the promise is completed.
+
+	This matches the execution model of normal Roblox functions.
+]]
+function Promise.prototype:awaitStatus()
+	self._unhandledRejection = false
+
+	if self._status == Promise.Status.Started then
+		local bindable = Instance.new("BindableEvent")
+
+		self:finally(function()
+			bindable:Fire()
+		end)
+
+		bindable.Event:Wait()
+		bindable:Destroy()
+	end
+
+	if self._status == Promise.Status.Resolved then
+		return self._status, unpack(self._values, 1, self._valuesLength)
+	elseif self._status == Promise.Status.Rejected then
+		return self._status, unpack(self._values, 1, self._valuesLength)
+	end
+
+	return self._status
+end
+
+local function awaitHelper(status, ...)
+	return status == Promise.Status.Resolved, ...
+end
+
+--[[
+	Calls awaitStatus internally, returns (isResolved, values...)
+]]
+function Promise.prototype:await()
+	return awaitHelper(self:awaitStatus())
+end
+
+local function expectHelper(status, ...)
+	if status ~= Promise.Status.Resolved then
+		error((...) == nil and "Expected Promise rejected with no value." or (...), 3)
+	end
+
+	return ...
+end
+
+--[[
+	Calls await and only returns if the Promise resolves.
+	Throws if the Promise rejects or gets cancelled.
+]]
+function Promise.prototype:expect()
+	return expectHelper(self:awaitStatus())
+end
+
+-- Backwards compatibility
+Promise.prototype.awaitValue = Promise.prototype.expect
+
+--[[
+	Intended for use in tests.
+
+	Similar to await(), but instead of yielding if the promise is unresolved,
+	_unwrap will throw. This indicates an assumption that a promise has
+	resolved.
+]]
+function Promise.prototype:_unwrap()
+	if self._status == Promise.Status.Started then
+		error("Promise has not resolved or rejected.", 2)
+	end
+
+	local success = self._status == Promise.Status.Resolved
+
+	return success, unpack(self._values, 1, self._valuesLength)
+end
+
+function Promise.prototype:_resolve(...)
+	if self._status ~= Promise.Status.Started then
+		if Promise.is((...)) then
+			(...):_consumerCancelled(self)
+		end
+		return
+	end
+
+	-- If the resolved value was a Promise, we chain onto it!
+	if Promise.is((...)) then
+		-- Without this warning, arguments sometimes mysteriously disappear
+		if select("#", ...) > 1 then
+			local message = string.format(
+				"When returning a Promise from andThen, extra arguments are " ..
+				"discarded! See:\n\n%s",
+				self._source
+			)
+			warn(message)
+		end
+
+		local chainedPromise = ...
+
+		local promise = chainedPromise:andThen(
+			function(...)
+				self:_resolve(...)
+			end,
+			function(...)
+				local maybeRuntimeError = chainedPromise._values[1]
+
+				-- Backwards compatibility < v2
+				if chainedPromise._error then
+					maybeRuntimeError = Error.new({
+						error = chainedPromise._error,
+						kind = Error.Kind.ExecutionError,
+						context = "[No stack trace available as this Promise originated from an older version of the Promise library (< v2)]",
+					})
+				end
+
+				if Error.isKind(maybeRuntimeError, Error.Kind.ExecutionError) then
+					return self:_reject(maybeRuntimeError:extend({
+						error = "This Promise was chained to a Promise that errored.",
+						trace = "",
+						context = string.format(
+							"The Promise at:\n\n%s\n...Rejected because it was chained to the following Promise, which encountered an error:\n",
+							self._source
+						),
+					}))
+				end
+
+				self:_reject(...)
+			end
+		)
+
+		if promise._status == Promise.Status.Cancelled then
+			self:cancel()
+		elseif promise._status == Promise.Status.Started then
+			-- Adopt ourselves into promise for cancellation propagation.
+			self._parent = promise
+			promise._consumers[self] = true
+		end
+
+		return
+	end
+
+	self._status = Promise.Status.Resolved
+	self._valuesLength, self._values = pack(...)
+
+	-- We assume that these callbacks will not throw errors.
+	for _, callback in ipairs(self._queuedResolve) do
+		task.defer(callback, ...)
+	end
+
+	self:_finalize()
+end
+
+function Promise.prototype:_reject(...)
+	if self._status ~= Promise.Status.Started then
+		return
+	end
+
+	self._status = Promise.Status.Rejected
+	self._valuesLength, self._values = pack(...)
+
+	-- If there are any rejection handlers, call those!
+	if not isEmpty(self._queuedReject) then
+		-- We assume that these callbacks will not throw errors.
+		for _, callback in ipairs(self._queuedReject) do
+			task.defer(callback, ...)
+		end
+	else
+		-- At this point, no one was able to observe the error.
+		-- An error handler might still be attached if the error occurred
+		-- synchronously. We'll wait one tick, and if there are still no
+		-- observers, then we should put a message in the console.
+
+		local err = tostring((...))
+
+		task.defer(function()
+			Promise._timeEvent:Wait()
+
+			-- Someone observed the error, hooray!
+			if not self._unhandledRejection then
+				return
+			end
+
+			-- Build a reasonable message
+			local message = string.format(
+				"Unhandled Promise rejection:\n\n%s\n\n%s",
+				err,
+				self._source
+			)
+
+			if Promise.TEST then
+				-- Don't spam output when we're running tests.
+				return
+			end
+
+			warn(message)
+		end)
+	end
+
+	self:_finalize()
+end
+
+--[[
+	Calls any :finally handlers. We need this to be a separate method and
+	queue because we must call all of the finally callbacks upon a success,
+	failure, *and* cancellation.
+]]
+function Promise.prototype:_finalize()
+	for _, callback in ipairs(self._queuedFinally) do
+		-- Purposefully not passing values to callbacks here, as it could be the
+		-- resolved values, or rejected errors. If the developer needs the values,
+		-- they should use :andThen or :catch explicitly.
+		task.defer(callback, self._status)
+	end
+
+	self._queuedFinally = nil
+	self._queuedReject = nil
+	self._queuedResolve = nil
+
+	-- Clear references to other Promises to allow gc
+	if not Promise.TEST then
+		self._parent = nil
+		self._consumers = nil
+	end
+end
+
+--[[
+	Chains a Promise from this one that is resolved if this Promise is
+	resolved, and rejected if it is not resolved.
+]]
+function Promise.prototype:now(rejectionValue)
+	local traceback = debug.traceback(nil, 2)
+	if self:getStatus() == Promise.Status.Resolved then
+		return self:_andThen(traceback, function(...)
+			return ...
+		end)
+	else
+		return Promise.reject(rejectionValue == nil and Error.new({
+			kind = Error.Kind.NotResolvedInTime,
+			error = "This Promise was not resolved in time for :now()",
+			context = ":now() was called at:\n\n" .. traceback,
+		}) or rejectionValue)
+	end
+end
+
+--[[
+	Retries a Promise-returning callback N times until it succeeds.
+]]
+function Promise.retry(callback, times, ...)
+	assert(type(callback) == "function", "Parameter #1 to Promise.retry must be a function")
+	assert(type(times) == "number", "Parameter #2 to Promise.retry must be a number")
+
+	local args, length = {...}, select("#", ...)
+
+	return Promise.resolve(callback(...)):catch(function(...)
+		if times > 0 then
+			return Promise.retry(callback, times - 1, unpack(args, 1, length))
+		else
+			return Promise.reject(...)
+		end
+	end)
+end
+
+--[[
+	Converts an event into a Promise with an optional predicate
+]]
+function Promise.fromEvent(event, predicate)
+	predicate = predicate or function()
+		return true
+	end
+
+	return Promise._new(debug.traceback(nil, 2), function(resolve, reject, onCancel)
+		local connection
+		local shouldDisconnect = false
+
+		local function disconnect()
+			connection:Disconnect()
+			connection = nil
+		end
+
+		-- We use shouldDisconnect because if the callback given to Connect is called before
+		-- Connect returns, connection will still be nil. This happens with events that queue up
+		-- events when there's nothing connected, such as RemoteEvents
+
+		connection = event:Connect(function(...)
+			local callbackValue = predicate(...)
+
+			if callbackValue == true then
+				resolve(...)
+
+				if connection then
+					disconnect()
+				else
+					shouldDisconnect = true
+				end
+			elseif type(callbackValue) ~= "boolean" then
+				error("Promise.fromEvent predicate should always return a boolean")
+			end
+		end)
+
+		if shouldDisconnect and connection then
+			return disconnect()
+		end
+
+		onCancel(function()
+			disconnect()
+		end)
+	end)
+end
+
+return Promise
+]]></ProtectedString>
+					<int64 name="SourceAssetId">-1</int64>
+					<BinaryString name="Tags"></BinaryString>
+				</Properties>
+			</Item>
+			<Item class="ModuleScript" referent="RBX973C4E28C87244AC8FE1541EF13F21F4">
+				<Properties>
+					<BinaryString name="AttributesSerialize"></BinaryString>
+					<Content name="LinkedSource"><null></null></Content>
+					<string name="Name">Signal</string>
+					<string name="ScriptGuid">{388C88A8-50C9-4F8D-9397-177E7016B904}</string>
+					<ProtectedString name="Source"><![CDATA[--[[
+	Example Code : Alternatives To BindableEvents
+	(allows Instance passing)
+
+	local newSignal = Signal.New('Signal1')
+	print(newSignal, getmetatable(newSignal))
+
+	print(Signal:GetSignal('Signal1'))
+	newSignal:HideSignal('Signal1') -- Prevents GetSignal
+
+	newSignal:Connect(function(connection, ...)
+		print("Got Callback: ", ...)
+	end)
+
+	newSignal:Fire()
+	task.spawn(function()
+		local t = tick()
+		newSignal:Wait(1)
+		print( string.format("defered %s/1 second", tick()-t) )
+	end)
+
+	newSignal:Fire("e")
+	newSignal:Disconnect()
+	newSignal:Fire()
+]]
+
+-- SPOOK_EXE
+
+local HttpService = game:GetService('HttpService')
+
+type BaseIdentifier = { ClassName : string, Active : boolean, ID : string }
+
+export type CallbackClass = BaseIdentifier & {
+	Super : table,
+	_function : (any) -> (nil)
+}
+
+export type SignalClass = BaseIdentifier & {
+	-- directly related to each signal (edits/accesses the self)
+	_callbacks : { [number] : CallbackClass },
+
+	Fire : (any) ,
+	Wait : (number) ,
+	Connect : (any) ,
+	Disconnect : (nil),
+
+	-- All signals have these and are not directly related to the signal (does not edit/access self)
+	GetSignal : (string) -> (SignalClass?),
+	HideSignal : (string) -> (nil),
+}
+
+local activeSignals : { [number] : SignalClass } = {}
+
+-- // Classes // --
+local Callback = {}
+Callback.__index = Callback
+
+function Callback.New(SuperSignal : SignalClass, callbackFunction : (any) -> (any)) : CallbackClass
+
+	return setmetatable({
+		ClassName = "BaseSignalCallback",
+		Super = setmetatable({}, SuperSignal),
+		Active = true,
+		ID = HttpService:GenerateGUID(false),
+		_function = callbackFunction,
+	}, Callback)
+
+end
+
+function Callback:Trigger(...) : nil
+	if not self.Active then
+		error("Trying to trigger a disconnected callback.")
+	end
+	self._function(...)
+end
+
+function Callback:Disconnect() : nil
+	if not self.Active then
+		error("Trying to disconnect a disconnected callback.")
+	end
+	self.Active = false
+	if self.Super then
+		getmetatable(self.Super):RemoveCallback(Callback)
+	end
+end
+
+local Signal = {}
+Signal.__index = Signal
+
+function Signal.New(customID : string?) : SignalClass
+	return setmetatable({
+		ClassName = "BaseSignal",
+		Active = true,
+		ID = customID or HttpService:GenerateGUID(false),
+		_callbacks = {},
+	}, Signal)
+end
+
+function Signal:GetSignal(signalID : string?)
+	assert(typeof(signalID) == "string", "Passed signalID is not a string.")
+	for i : number, signal : SignalClass in ipairs(activeSignals) do
+		if signal.ID == signalID then
+			return signal
+		end
+	end
+	return Signal.New(signalID)
+end
+
+function Signal:HideSignal(signalID : string?)
+	assert(typeof(signalID) == "string", "Passed signalID is not a string.")
+	for i : number, signal : SignalClass in ipairs(activeSignals) do
+		if signal.ID == signalID then
+			table.remove(activeSignals, i)
+			break
+		end
+	end
+end
+
+function Signal:RemoveCallback(callback : CallbackClass) : nil
+	for i, callbackClass : CallbackClass in ipairs(self._callbacks) do
+		if callback.ID == callbackClass.ID then
+			table.remove(self._callbacks, i)
+			break
+		end
+	end
+end
+
+function Signal:Fire(...)
+	if not self.Active then
+		error("Trying to fire a disconnected Signal.")
+	end
+	for i : number, callbackClass : CallbackClass in ipairs(self._callbacks) do
+		callbackClass:Trigger(...)
+	end
+end
+
+function Signal:Wait(timePeriod : number?) : nil
+	if not self.Active then
+		error("Trying to Wait on a disconnected Signal.")
+	end
+	timePeriod = typeof(timePeriod) == "number" and timePeriod or nil
+	local bindableWait : BindableEvent = Instance.new('BindableEvent')
+	local callback; callback = self:Connect(function()
+		callback:Disconnect()
+		bindableWait:Fire()
+	end)
+	bindableWait.Event:Wait()
+	bindableWait:Destroy()
+	if timePeriod then
+		task.wait(timePeriod)
+	end
+end
+
+function Signal:Connect(...) : any?
+	if not self.Active then
+		error("Trying to connect a disconnected Signal.")
+	end
+	local callbacks : { [number] : CallbackClass } = {}
+	local passed_arguments = {...}
+	for i : number, passed_arg : any in ipairs(passed_arguments) do
+		if typeof(passed_arg) == "function" then
+			local new_callback : CallbackClass = Callback.New(self, passed_arg)
+			table.insert(self._callbacks, new_callback)
+			table.insert(callbacks, new_callback)
+		end
+	end
+	return unpack(callbacks)
+end
+
+function Signal:Disconnect() : nil
+	if not self.Active then
+		error("Trying to disconnect a disconnected Signal.")
+	end
+	self.Active = false
+	self:HideSignal(self.ID)
+	self.Callbacks = nil
+	setmetatable(self, {
+		__index = function(...)
+			return nil
+		end,
+		__newindex = function(...)
+			error("Cannot edit locked metatable")
+		end,
+	})
+end
+
+return Signal
+
+-- SPOOK_EXE]]></ProtectedString>
+					<int64 name="SourceAssetId">-1</int64>
+					<BinaryString name="Tags"></BinaryString>
+				</Properties>
+			</Item>
+			<Item class="ModuleScript" referent="RBXFC1490982C0140E1803D77F8A424C319">
+				<Properties>
+					<BinaryString name="AttributesSerialize"></BinaryString>
+					<Content name="LinkedSource"><null></null></Content>
+					<string name="Name">Timer</string>
+					<string name="ScriptGuid">{54CC933A-36B8-4221-BA6D-BBE458F3BDFB}</string>
+					<ProtectedString name="Source"><![CDATA[
+local RunService : RunService = game:GetService('RunService')
+
+type Dictionary = { [any] : any }
+
+export type Signal = {
+    Fire : (any) -> nil,
+    Wait : (any) -> nil,
+    Connect : (any) -> nil,
+    Disconnect : (nil) -> nil,
+}
+
+export type Timer = {
+    Active : boolean?,
+    Interval : number?,
+    Signal : Signal,
+    _lastTick : number,
+    _destroyed : boolean?,
+    Destroy : (nil) -> nil
+}
+
+local SignalClass : Signal = require(script.Parent.Signal)
+
+local Timers : { [number] : Timer } = {}
+
+RunService.Heartbeat:Connect(function()
+    local newClock : number = os.clock()
+    for i : number, timerClass : Timer in pairs(Timers) do
+        if timerClass._destroyed then
+            table.remove(Timers, i)
+            break
+        end
+        local deltaTime : number = (newClock - timerClass._lastTick)
+        if deltaTime >= timerClass.Interval then
+            timerClass._lastTick = newClock
+            timerClass.Signal:Fire()
+        end
+    end
+end)
+
+-- // Class // --
+local Class : Dictionary = {}
+
+function Class.New(Properties : Dictionary) : Timer
+
+    local self : Timer = {
+        Active = true,
+        Interval = 1,
+        Signal = SignalClass.New(),
+
+        _lastTick = -1,
+        _destroyed = false,
+    }
+
+    if typeof(Properties) == 'table' then
+        for propName : string, propValue : any in pairs(Properties) do
+            self[propName] = propValue
+        end
+    end
+
+    setmetatable(self, Class)
+
+    table.insert(Timers, self)
+
+    return self
+
+end
+
+function Class:Destroy() : nil
+    self.Active = false
+    self._destroyed = true
+    self.Signal:Disconnect()
+end
+
+return Class
+
+]]></ProtectedString>
+					<int64 name="SourceAssetId">-1</int64>
+					<BinaryString name="Tags"></BinaryString>
+				</Properties>
+			</Item>
+		</Item>
+		<Item class="ModuleScript" referent="RBX778566CCEA4D48699A66E886162E095D">
+			<Properties>
+				<BinaryString name="AttributesSerialize"></BinaryString>
+				<Content name="LinkedSource"><null></null></Content>
+				<string name="Name">Config</string>
+				<string name="ScriptGuid">{07CF0542-522D-437F-8A8C-63CD9CD88370}</string>
+				<ProtectedString name="Source"><![CDATA[return {
+    LocalHostIP = "http://127.0.0.1:255",
+    AccessKey =  "2452341534252346246345",
+} :: { LocalHostIP : string }]]></ProtectedString>
+				<int64 name="SourceAssetId">-1</int64>
+				<BinaryString name="Tags"></BinaryString>
+			</Properties>
+		</Item>
+		<Item class="Script" referent="RBXC1D2649103794D2B87402AD43D95B7DA">
+			<Properties>
+				<BinaryString name="AttributesSerialize"></BinaryString>
+				<bool name="Disabled">false</bool>
+				<Content name="LinkedSource"><null></null></Content>
+				<string name="Name">Plugin</string>
+				<string name="ScriptGuid">{0163CE6D-C3DC-4AC6-BED4-87C84D0FE5D5}</string>
+				<ProtectedString name="Source"><![CDATA[
+type Dictionary = { [string] : any }
+type Array = { [number] : any }
+
+local HttpService : HttpService = game:GetService('HttpService')
+local SelectionService : Selection = game:GetService('Selection')
+local StudioService : StudioService = game:GetService('StudioService')
+local RunService : RunService = game:GetService('RunService')
+local MarketplaceService : MarketplaceService = game:GetService('MarketplaceService')
+
+local PluginFolder : Folder = script.Parent
+local Signal : Dictionary = require(PluginFolder.Classes.Signal)
+local Promise : Dictionary = require(PluginFolder.Classes.Promise)
+local Maid : Dictionary = require(PluginFolder.Classes.Maid)
+
+local plugin : Plugin = plugin
+
+local Config : Dictionary = require(PluginFolder.Config)
+
+local activeOutgoing : Dictionary? = nil
+local activePromise : Promise? = nil
+
+local onDataUpdated : Signal.SignalClass = Signal.New("onDataUpdated")
+
+local activeSourceMaid : Dictionary = nil
+
+function getLines(s : string) : number
+    local lines : Array = {}
+    local str : string = ""
+    for i = 1, string.len(s.Source) do
+    	if (string.sub(s.Source, i, i) == "\n") then
+	    	table.insert(lines, str)
+	    	str = ""
+    	else
+	    	str = str..string.sub(s.Source, i, i)
+    	end
+    end
+	if (str ~= "") then
+        table.insert(lines, str)
+	end
+	return #lines
+end
+
+function MakeRequestAsync(URL : string, Body : string) : (any, any)
+    return HttpService:RequestAsync({
+        Url = URL,
+        Method = "POST",
+        Body = HttpService:JSONEncode(Body),
+        Headers = {["Content-Type"] = "application/json"}
+    })
+end
+
+function SetupConnections(script : LuaSourceContainer) : nil
+    if activeSourceMaid then
+        activeSourceMaid:Cleanup()
+        activeSourceMaid = nil
+    end
+    if script then
+        activeSourceMaid = Maid.new()
+        local LineCount : number = getLines(script)
+        activeSourceMaid:Give(RunService.Heartbeat:Connect(function()
+            local newLineCount : number = getLines(script)
+            if newLineCount ~= LineCount then
+                task.spawn(UpdateData)
+            end
+        end))
+    end
+end
+
+function UpdateData() : nil
+    task.wait()
+    local placeInfo : Dictionary = MarketplaceService:GetProductInfo(game.PlaceId)
+    local activeScript : LuaSourceContainer = StudioService.ActiveScript
+    SetupConnections(activeScript)
+    print(activeScript)
+    activeOutgoing = {
+        ACCESS_KEY = Config.AccessKey,
+        ScriptName = activeScript and activeScript.Name or false,
+        ScriptSource = activeScript and activeScript.Source or false,
+        ScriptFullName = activeScript and activeScript:GetFullName() or false,
+        ScriptClass = activeScript and activeScript.ClassName or false,
+        PlaceName = placeInfo.Name,
+        PlaceID = game.PlaceId,
+        CreatorID = game.CreatorId,
+        CreatorType = game.CreatorType.Name
+    }
+    onDataUpdated:Fire()
+end
+
+onDataUpdated:Connect(function()
+    local hasResolved : boolean = false
+    local errMsg : string? = nil
+    if activePromise then
+        activePromise:cancel()
+        activePromise = nil
+    end
+    activePromise = Promise.try(function()
+        local ReturnData : Dictionary? = nil
+        hasResolved, errMsg = pcall(function()
+            ReturnData = HttpService:JSONDecode(MakeRequestAsync(Config.LocalHostIP, {activeOutgoing, "DATA FINISHED"}).Body)
+        end)
+        if (not hasResolved) and errMsg then
+           --warn(errMsg)
+        end
+        return hasResolved, ReturnData or errMsg
+    end):andThen(function(succeeded : boolean, data : Dictionary | string)
+        --print(succeeded, data)
+    end)
+end)
+
+local pMaid = Maid.new()
+
+pcall(function()
+    game:BindToClose(function()
+        MakeRequestAsync(Config.LocalHostIP, {{
+            ACCESS_KEY = Config.AccessKey,
+            ScriptName = false,
+            ScriptSource = false,
+            ScriptFullName = false,
+            ScriptClass = false,
+            PlaceName = false,
+            PlaceID = false,
+            CreatorID = false,
+            CreatorType = false
+        }, "DATA FINISHED"})
+    end)
+end)
+
+pMaid:Give(StudioService:GetPropertyChangedSignal('ActiveScript'):Connect(UpdateData))
+pMaid:Give(onDataUpdated)
+pMaid:Give(plugin.Unloading:Connect(function()
+    pMaid:Cleanup()
+end))
+pMaid:Give(plugin.Deactivation:Connect(function()
+    pMaid:Cleanup()
+end))
+task.delay(2, UpdateData)
+]]></ProtectedString>
+				<int64 name="SourceAssetId">-1</int64>
+				<BinaryString name="Tags"></BinaryString>
+			</Properties>
+		</Item>
+		<Item class="Folder" referent="RBXF5506C8E6AE34F78B0EF7BE628863047">
+			<Properties>
+				<BinaryString name="AttributesSerialize"></BinaryString>
+				<string name="Name">Utility</string>
+				<int64 name="SourceAssetId">-1</int64>
+				<BinaryString name="Tags"></BinaryString>
+			</Properties>
+			<Item class="ModuleScript" referent="RBX92D9F54A54A24ECFB4448255B87AD9C9">
+				<Properties>
+					<BinaryString name="AttributesSerialize"></BinaryString>
+					<Content name="LinkedSource"><null></null></Content>
+					<string name="Name">Debounce</string>
+					<string name="ScriptGuid">{4E6251E1-7578-404D-9C21-C561DCBAB2B5}</string>
+					<ProtectedString name="Source"><![CDATA[
+type Dictionary = { [string] : any }
+
+local activeDebounces : Dictionary = {}
+
+-- // Module // --
+local Module = {}
+
+function Module:Debounce(debounceName : string?, duration : number?)
+	duration = typeof(duration) == 'number' and duration or 1
+	if typeof(debounceName) == 'string' then
+		if activeDebounces[debounceName] then
+			return false
+		end
+		activeDebounces[debounceName] = true
+		task.delay(duration, function()
+			activeDebounces[debounceName] = nil
+		end)
+		return true
+	end
+	return false
+end
+
+Module.__call = function(_, ...)
+	return Module:Debounce(...)
+end
+
+setmetatable(Module, Module)
+return Module
+]]></ProtectedString>
+					<int64 name="SourceAssetId">-1</int64>
+					<BinaryString name="Tags"></BinaryString>
+				</Properties>
+			</Item>
+			<Item class="ModuleScript" referent="RBX1AC2E39082114F2BB60EDC7F46264E87">
+				<Properties>
+					<BinaryString name="AttributesSerialize"></BinaryString>
+					<Content name="LinkedSource"><null></null></Content>
+					<string name="Name">Numbers</string>
+					<string name="ScriptGuid">{97F57221-DDCB-4A6C-BD5F-5731F86DF89E}</string>
+					<ProtectedString name="Source"><![CDATA[type Dictionary = { [any] : any }
+type Array = { [number] : any }
+
+local Module : Dictionary = {}
+
+-- from number A to B with alpha t (0 -> 1)
+function Module:LinearInterpolation(v0 : number, v1 : number, t : number) : number
+	return (1 - t) * v0 + t * v1
+end
+
+-- Processing equilivant of map(number, oldMinA, oldMaxB, newMinA, newMaxB)
+function Module:MapValue(n : number, start : number, stop : number, newStart : number, newStop : number) : number
+	return ((n - start) / (stop - start)) * (newStop - newStart) + newStart
+end
+
+-- Returns the % value of the decimal (0 -> 1) (000.00)
+function Module:FormatPercent(decimal : number) : string
+	return string.format("%3.2f", decimal * 100) .. "%"
+end
+
+-- Round the given number between the given decimal places
+function Module:RoundN(number : number, decimal_places : number) : number
+	decimal_places = (decimal_places or 0)
+	if decimal_places == 0 then
+		return math.round(number)
+	end
+	local e : number = math.pow(10, decimal_places)
+	return math.round(number * e) / e
+end
+
+-- Clamp the given value between 0 and 1
+function Module:Clamp01(value : number) : number
+	return math.clamp(value, 0, 1)
+end
+
+-- Add Commas to Number, 1000 = 1,000
+function Module:NumberCommas(value : number, useAltCommas : number) : string
+	local wholeComponent : string = tostring(math.floor(math.abs(value)))
+	local decimalComponent : string = tostring(value - math.floor(value))
+	local comma : string = useAltCommas and "." or ","
+	local period : string = useAltCommas and "," or "."
+	local newString : string = ""
+	local digits : number = 0
+	for idx = #wholeComponent, 1, -1 do
+		newString = wholeComponent:sub(idx, idx) .. newString
+		digits += 1
+		if digits == 3 and idx ~= 1 then
+			newString = comma .. newString
+			digits = 0
+		end
+	end
+	if decimalComponent ~= "0" and #decimalComponent > 2 then
+		newString = newString .. period .. decimalComponent:sub(3)
+	end
+	if math.sign(value) == -1 then
+		newString = "-" .. newString
+	end
+	return newString
+end
+
+-- 300 -> (00:05:00)
+function Module:FormatForTimer(seconds : number) : string
+	seconds = math.floor(seconds)
+	local minutes : number = (seconds/60)
+	local hours : number = math.floor(minutes/60)
+	hours = (hours < 0 and 0 or hours)
+	minutes = math.floor(minutes) - (hours * 60)
+	minutes = (minutes < 0 and 0 or minutes)
+	seconds = seconds - (minutes*60) - (hours * 60 * 60)
+	seconds = (seconds < 0 and 0 or seconds)
+	return (hours>9 and hours or '0'..hours)..':'..(minutes>9 and minutes or '0'..minutes)..':'..(seconds>9 and seconds or '0'..seconds)
+end
+
+local NUMBER_SUFFIXES : Array = {"k","M","B","T","qd","Qn","sx","Sp","O","N","de","Ud","DD","tdD","qdD","QnD","sxD","SpD","OcD","NvD","Vgn","UVg","DVg","TVg","qtV","QnV","SeV","SPG","OVG","NVG","TGN","UTG","DTG","tsTG","qtTG","QnTG","ssTG","SpTG","OcTG","NoTG","QdDR","uQDR","dQDR","tQDR","qdQDR","QnQDR","sxQDR","SpQDR","OQDDr","NQDDr","qQGNT","uQGNT","dQGNT","tQGNT","qdQGNT","QnQGNT","sxQGNT","SpQGNT", "OQQGNT","NQQGNT","SXGNTL"}
+
+-- 50000 -> 50k
+function Module:NumberSuffix(Input : number) : string
+	local Negative : number = (Input < 0)
+	Input = math.abs(Input)
+	local Paired : boolean = false
+	for i : number, v : string in pairs(NUMBER_SUFFIXES) do
+		if not (Input >= 10^(3*i)) then
+			Input = Input / 10^(3*(i-1))
+			local isComplex : boolean = (string.find(tostring(Input),".") and string.sub(tostring(Input),4,4) ~= ".")
+			Input = string.sub(tostring(Input),1,(isComplex and 4) or 3)..(NUMBER_SUFFIXES[i-1] or "")
+			Paired = true
+			break
+		end
+	end
+	if not Paired then
+		local Rounded : number = math.floor(Input)
+		Input = tostring(Rounded)
+	end
+	if Negative then
+		return "-"..Input
+	end
+	return Input
+end
+
+-- Module:ToNumeral(5) - "V"
+function Module:ToRomanNumeral(Number) : string
+	local Numbers : number = {1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1,}
+	local Numerals : string = {"M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I",}
+	local Result : string = ""
+	if Number < 0 or Number >= 4000 then
+		return nil
+	elseif Number == 0 then
+		return "N"
+	else
+		for Index = 1, 13 do
+			while Number >= Numbers[Index] do
+				Number = Number - Numbers[Index]
+				Result = Result..Numerals[Index]
+			end
+		end
+	end
+	return Result
+end
+
+local RomanDigit : Dictionary = {["I"] = 1, ["V"] = 5, ["X"] = 10, ["L"] = 50, ["C"] = 100, ["D"] = 500, ["M"] = 1000}
+local SpecialRomanDigit : Dictionary = {["I"] = 1, ["X"] = 10, ["C"] = 100,}
+local function CheckNumOfCharacterInString(TheString : string, Character : string)
+	local Number : number = 0
+	for ID in string.gmatch(TheString, Character) do
+		Number = Number + 1
+	end
+	return Number
+end
+
+-- GetRomanNumeral("XII")
+function Module:FromRomanNumeral(Numeral : string) : number?
+	Numeral = string.upper(Numeral)
+	local Result : number = 0
+	if Numeral == "N" then 
+		return 0
+	elseif CheckNumOfCharacterInString(Numeral, "V") >= 2 or CheckNumOfCharacterInString(Numeral, "L") >= 2 or CheckNumOfCharacterInString(Numeral, "D") >= 2 then --(#{string.find(Numeral, "V*.V")} >= 2) or (#{string.find(Numeral, "L*.L")} >= 2) or (#{string.find(Numeral, "D*.D")} >= 2) then
+		return nil
+	end
+	local Last : string = "Z"
+	local Count : number = 1
+	for i=1, #Numeral do
+		local Numeral : string = string.sub(Numeral, i, i)
+		if not RomanDigit[Numeral] then
+			return nil
+		end
+		if Numeral == Last then
+			Count = Count + 1
+			if Count >= 4 then
+				return nil
+			end
+		else
+			Count = 1
+		end
+		Last = Numeral
+	end
+	local Pointer : number = 1
+	local Values : Array = {}
+	local MaxDigit : number = 1000
+	while Pointer <= #Numeral do
+		local Numeral : string = string.sub(Numeral, Pointer, Pointer)
+		local Digit : number = RomanDigit[Numeral]
+		if Digit > MaxDigit then
+			return nil
+		end
+		local NextDigit : number = 0
+		if Pointer <= #Numeral - 1 then
+			local NextNumeral : string = string.sub(Numeral, Pointer+1, Pointer+1)
+			NextDigit = RomanDigit[NextNumeral]
+			if NextDigit > Digit then
+				if (not SpecialRomanDigit[Numeral]) or NextDigit > (Digit * 10) or CheckNumOfCharacterInString(Numeral, Numeral) > 3 then
+					return nil
+				end
+				MaxDigit = Digit - 1
+				Digit = NextDigit - Digit
+				Pointer = Pointer + 1
+			end
+		end
+		table.insert(Values, Digit)
+		Pointer = Pointer + 1
+	end
+	for Index = 1, #Values-1 do
+		if Values[Index] < Values[Index + 1] then
+			return nil
+		end
+	end
+	local Total : number = 0
+	for Index : number, Digit : string in pairs(Values) do
+		Total = Total + Digit
+	end
+	return Total
+end
+
+return Module
+]]></ProtectedString>
+					<int64 name="SourceAssetId">-1</int64>
+					<BinaryString name="Tags"></BinaryString>
+				</Properties>
+			</Item>
+			<Item class="ModuleScript" referent="RBX9891979154F5481EBAEC2D56564195AE">
+				<Properties>
+					<BinaryString name="AttributesSerialize"></BinaryString>
+					<Content name="LinkedSource"><null></null></Content>
+					<string name="Name">String</string>
+					<string name="ScriptGuid">{80421414-65DA-43DE-96CC-CB3D4DD7BD24}</string>
+					<ProtectedString name="Source"><![CDATA[
+type Dictionary = { [any] : any }
+type Array = { [number] : any }
+
+local Module : Dictionary = {
+    Compression = require(script.Compression) 
+}
+
+function Module:ConvertToBytesTable(str) : Array
+	local bytes : Array = {}
+	for strIndex = 1, #str do
+		local character : string = string.sub(str, strIndex, strIndex)
+		local byte : number = string.byte(character)
+		table.insert(bytes, byte)
+	end
+	return bytes
+end
+
+function Module:ConvertToTotalBytes(str) : number
+	local total : number = 0
+	for _ : number, n : number in ipairs(Module:ConvertToBytesTable(str)) do
+		total += n
+	end
+	return total
+end
+
+function Module:SpaceStringByPrimary(str) : string -- splits string at the start of a new capital or at the end of a number sequence
+	local regions : Array = {}
+	local currentIndex : number = 1
+	local hasNumber : boolean = false
+	local function Split(Index : number) : nil
+		local leftRegion : string = string.sub(str, 1, Index - 1)
+		local rightRegion : string = string.sub(str, Index, #str)
+		table.insert(regions, leftRegion)
+		str = rightRegion
+	end
+	while true do
+		currentIndex += 1
+		if currentIndex > #str then
+			table.insert(regions, str)
+			break
+		end
+		local char : string = string.sub(str, currentIndex, currentIndex)
+		if string.byte(char) > 64 and string.byte(char) < 91 then -- capital letters
+			hasNumber = false
+			Split(currentIndex)
+			currentIndex = 1
+		elseif string.byte(char) > 48 and string.byte(char) < 57 and not hasNumber then -- numbers
+			hasNumber = true
+			Split(currentIndex)
+			currentIndex = 1
+		end
+	end
+	return table.concat(regions, ' ')
+end
+
+return Module
+]]></ProtectedString>
+					<int64 name="SourceAssetId">-1</int64>
+					<BinaryString name="Tags"></BinaryString>
+				</Properties>
+			</Item>
+			<Item class="ModuleScript" referent="RBXADD77BA3AB0F41CA9AF4A49810885B7E">
+				<Properties>
+					<BinaryString name="AttributesSerialize"></BinaryString>
+					<Content name="LinkedSource"><null></null></Content>
+					<string name="Name">Table</string>
+					<string name="ScriptGuid">{55FA41E3-90F0-42D4-9AB1-348523052CAD}</string>
+					<ProtectedString name="Source"><![CDATA[type Array = { [number] : any }
+type Dictionary = { [any] : any }
+
+-- // Module // --
+local Module : Dictionary = {}
+
+function Module:DeepCopy(passed_table : table) : table
+	local clonedTable : table = {}
+	if typeof(passed_table) == "table" then
+		for k,v in pairs(passed_table) do 
+			clonedTable[Module:DeepCopy(k)] = Module:DeepCopy(v)
+		end
+	else
+		clonedTable = passed_table
+	end
+	return clonedTable
+end
+
+-- DICTIONARY
+function Module:CleanTableAndOverwrite(oldTable : table, overwriteData : table) : table
+	for k : any, v : any in pairs(oldTable) do
+		rawset(oldTable, k, nil)
+	end
+	for k : any, v : any in pairs(overwriteData) do
+		rawset(oldTable, k, v)
+	end
+end
+
+function Module:GetRandomDictionaryIndex(Dict : table) : any
+	local indexes : Array = {}
+	for i : any, _ in pairs(Dict) do
+		table.insert(indexes, i)
+	end
+	return indexes[math.random(#indexes)]
+end
+
+function Module:GetRandDictionaryValue(Dict : table) : any?
+	return Dict[ Module:GetRandDictionaryIndex(Dict) ]
+end
+
+-- Combine all tables (arrays) pasted into this function into one singular table.
+function Module:CombineArrays(...) : table
+	local combined : Array = {}
+	local arrays : Array = {...}
+	for index = 1, #arrays do
+		if typeof(arrays[index]) == 'table' and #arrays[index] > 0 then
+			table.move(arrays[index], 1, #arrays[index], #combined + 1, combined)
+		end
+	end
+	return combined
+end
+
+function Module:FindValueInTable(Table : table, Value : any) : (number | nil)
+	local _index : number? = table.find(Table, Value)
+    if not _index then
+        for index : any, value : any in pairs(Table) do 
+            if value == Value then
+                return index
+            end
+        end
+    end
+    return _index
+end
+
+-- OBJECTS -> TABLE // TABLE -> OBJECTS
+local OT_Types : Dictionary = {
+	['boolean'] = 'BoolValue',
+	['string'] = 'StringValue',
+	['number'] = 'NumberValue',
+}
+
+function Module:TableToObject(Tbl : table, Prnt : Instance, Ignores : table?, Nst : number?) : Instance
+	if Nst and (Nst > 30) then
+        return
+    end
+	for k : any, v : any in pairs(Tbl) do
+		if (not Ignores) or (not table.find(Ignores, tostring(k))) then
+			if typeof(v) == 'table' then
+				local Fold : Folder = Instance.new('Folder')
+				Fold.Name = tostring(k)
+				Module:TableToObject(v, Fold, Ignores, (Nst or 0) + 1)
+				Fold.Parent = Prnt
+			elseif typeof(k) == 'number' and typeof(v) == 'string' then
+				local Fold : Folder = Instance.new('Folder')
+				Fold.Name = tostring(v)
+				Fold.Parent = Prnt
+			else
+				local c : string = OT_Types[typeof(v)] or OT_Types['string']
+				local val : Instance = Instance.new(c)
+				val.Name = tostring(k)
+				if not pcall(function() val.Value = v end) then
+					val.Value = tostring(v)
+				end
+				val.Parent = Prnt
+			end
+		end
+	end
+    return Prnt
+end
+
+function Module:ObjectToTable(Prnt : Instance, Tbl : table) : table
+	Tbl = Tbl or {}
+    for index : number, child : Instance in ipairs(Prnt:GetChildren()) do
+		if child:IsA('Folder') then
+			Tbl[child.Name] = Module:ObjectToTable({}, child)
+		else
+			Tbl[child.Name] = child.Value
+		end
+	end
+	return Tbl
+end
+
+return Module
+]]></ProtectedString>
+					<int64 name="SourceAssetId">-1</int64>
+					<BinaryString name="Tags"></BinaryString>
+				</Properties>
+			</Item>
+			<Item class="ModuleScript" referent="RBXD8C5B1ECB3594C3181B7F3C115F0A2F7">
+				<Properties>
+					<BinaryString name="AttributesSerialize"></BinaryString>
+					<Content name="LinkedSource"><null></null></Content>
+					<string name="Name">Time</string>
+					<string name="ScriptGuid">{353D7761-6E8E-4361-95DE-982E39FEC24D}</string>
+					<ProtectedString name="Source"><![CDATA[type Dictionary = { [string] : any }
+
+local Module : Dictionary = {}
+
+function Module:Get() : number
+    return os.time(os.date('!*t'))
+end
+
+return Module]]></ProtectedString>
+					<int64 name="SourceAssetId">-1</int64>
+					<BinaryString name="Tags"></BinaryString>
+				</Properties>
+			</Item>
+		</Item>
+	</Item>
+</roblox>

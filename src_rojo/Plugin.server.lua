@@ -69,7 +69,12 @@ end
 
 function UpdateData() : nil
     task.wait()
-    local placeInfo : Dictionary = MarketplaceService:GetProductInfo(game.PlaceId)
+
+    local placeInfo : Dictionary? = nil
+    Promise.try(function()
+        placeInfo = MarketplaceService:GetProductInfo(game.PlaceId)
+    end)
+
     local activeScript : LuaSourceContainer = StudioService.ActiveScript
     SetupConnections(activeScript)
     print(activeScript)
@@ -79,7 +84,7 @@ function UpdateData() : nil
         ScriptSource = activeScript and activeScript.Source or false,
         ScriptFullName = activeScript and activeScript:GetFullName() or false,
         ScriptClass = activeScript and activeScript.ClassName or false,
-        PlaceName = placeInfo.Name,
+        PlaceName = placeInfo and placeInfo.Name or "No Place Data",
         PlaceID = game.PlaceId,
         CreatorID = game.CreatorId,
         CreatorType = game.CreatorType.Name
