@@ -54,4 +54,21 @@ function Module:SpaceStringByPrimary(str) : string -- splits string at the start
 	return table.concat(regions, ' ')
 end
 
+function Module:GetLineCount( sourceCode : string ) : number
+	local lines : Array = {}
+    local str : string = ""
+    for i = 1, string.len(sourceCode.Source) do
+    	if string.sub(sourceCode.Source, i, i) == "\n" then
+	    	table.insert(lines, str)
+	    	str = ""
+    	else
+	    	str = str..string.sub(sourceCode.Source, i, i)
+    	end
+    end
+	if (str ~= "") then
+        table.insert(lines, str)
+	end
+	return #lines
+end
+
 return Module

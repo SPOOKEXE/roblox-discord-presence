@@ -10,8 +10,11 @@ local MarketplaceService : MarketplaceService = game:GetService('MarketplaceServ
 
 local PluginFolder : Folder = script.Parent
 local Signal : Dictionary = require(PluginFolder.Classes.Signal)
+local Timer : Dictionary = require(PluginFolder.Classes.Timer)
 local Promise : Dictionary = require(PluginFolder.Classes.Promise)
 local Maid : Dictionary = require(PluginFolder.Classes.Maid)
+
+local StringUtil : Dictionary = require(PluginFolder.Utility.String)
 
 local plugin : Plugin = plugin
 
@@ -23,23 +26,6 @@ local activePromise : Promise? = nil
 local onDataUpdated : Signal.SignalClass = Signal.New("onDataUpdated")
 
 local activeSourceMaid : Dictionary = nil
-
-function getLines(s : string) : number
-    local lines : Array = {}
-    local str : string = ""
-    for i = 1, string.len(s.Source) do
-    	if (string.sub(s.Source, i, i) == "\n") then
-	    	table.insert(lines, str)
-	    	str = ""
-    	else
-	    	str = str..string.sub(s.Source, i, i)
-    	end
-    end
-	if (str ~= "") then
-        table.insert(lines, str)
-	end
-	return #lines
-end
 
 function MakeRequestAsync(URL : string, Body : string) : (any, any)
     return HttpService:RequestAsync({
@@ -57,9 +43,9 @@ function SetupConnections(script : LuaSourceContainer) : nil
     end
     if script then
         activeSourceMaid = Maid.new()
-        local LineCount : number = getLines(script)
+        local LineCount : number = StringUtil:GetLineCount(script)
         activeSourceMaid:Give(RunService.Heartbeat:Connect(function()
-            local newLineCount : number = getLines(script)
+            local newLineCount : number = StringUtil:GetLineCount(script)
             if newLineCount ~= LineCount then
                 task.spawn(UpdateData)
             end
@@ -85,7 +71,7 @@ function UpdateData() : nil
             CreatorType = game.CreatorType.Name
         }
         onDataUpdated:Fire()
-    end)
+    end):catch(function(err) end)
 end
 
 onDataUpdated:Connect(function()
@@ -129,10 +115,7 @@ end)
 
 pMaid:Give(StudioService:GetPropertyChangedSignal('ActiveScript'):Connect(UpdateData))
 pMaid:Give(onDataUpdated)
-pMaid:Give(plugin.Unloading:Connect(function()
-    pMaid:Cleanup()
-end))
-pMaid:Give(plugin.Deactivation:Connect(function()
-    pMaid:Cleanup()
-end))
+pMaid:Give(plugin.Unloading:Connect(function() pMaid:Cleanup() end))
+pMaid:Give(plugin.Deactivation:Connect(function() pMaid:Cleanup() end))
+pMaid:Give(Timer.New({Interval = 10}).Signal:Connect(function() onDataUpdated:Fire() end))
 task.delay(2, UpdateData)
