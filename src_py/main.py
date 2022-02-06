@@ -4,6 +4,7 @@ import time
 import json
 import os
 import psutil
+import keyboard
 # from
 from io import FileIO
 from pypresence import Presence
@@ -35,6 +36,8 @@ LatestData = None
 #     CreatorType = game.CreatorType.Name,
 # }
 
+icon = "robloxstudioicon"
+
 # Class
 class PresenceNetworkHost(Network):
     def getReturnData(self, address, data):
@@ -54,7 +57,7 @@ def SetBlankRPC() -> None:
         details = "Meditating in Roblox Studio.", 
         state = "Awaiting Connection.",
         start = int( time.time() ),
-        large_image = "robloxstudioicon"
+        large_image = icon
     )
 
 def SetPlaceRPC() -> None:
@@ -63,7 +66,7 @@ def SetPlaceRPC() -> None:
         details = 'Editing Place: {}'.format(LatestData['PlaceName']), 
         state = "No Active Script Editor",
         start = int( time.time() ),
-        large_image = "robloxstudioicon"
+        large_image = icon
     )
 
 def SetDataRPC() -> None:
@@ -72,7 +75,7 @@ def SetDataRPC() -> None:
         details = '{} [{}] (Lines: {})'.format(LatestData["ScriptName"], LatestData["ScriptClass"][0], str( CountLines(LatestData["ScriptSource"]) )), 
         state = "{} - {}".format( LatestData['ScriptFullName'].split(".")[0], LatestData['PlaceName'] ),
         start = int( time.time() ),
-        large_image = "robloxstudioicon"
+        large_image = icon
     )
 
 def UpdateRPC() -> None:
@@ -104,6 +107,9 @@ HostNetwork = PresenceNetworkHost(
 
 while True:
     UpdateRPC()
+    if keyboard.is_pressed("q") == True:
+        HostNetwork.kill()
+        break
     time.sleep(2)
 
 # while True:  # The presence will stay on as long as the program is running
