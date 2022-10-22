@@ -36,7 +36,7 @@ function SetupConnections(script)
 		activeSourceMaid = nil
 	end
 	if script then
-		activeSourceMaid = Maid.new()
+		activeSourceMaid = Maid.New()
 		local LineCount : number = StringUtil:GetLineCount(script)
 		activeSourceMaid:Give(RunService.Heartbeat:Connect(function()
 			local newLineCount : number = StringUtil:GetLineCount(script)
@@ -66,7 +66,7 @@ function UpdateData()
 		}
 		onDataUpdated:Fire()
 	end):catch(function(_)
-
+		--warn(err)
 	end)
 end
 
@@ -86,31 +86,40 @@ onDataUpdated:Connect(function()
 		-- 	--warn(errMsg)
 		-- end
 		return hasResolved, ReturnData or errMsg
-	end):andThen(function(_)
+	end):andThen(function(_, _)
 		--print(succeeded, data)
 	end)
 end)
 
 local pMaid = Maid.New()
 
+local function OnGameClosed()
+	MakeRequestAsync(Config.LocalHostIP, {{
+		ACCESS_KEY = Config.AccessKey,
+		ScriptName = false,
+		ScriptSource = false,
+		ScriptFullName = false,
+		ScriptClass = false,
+		PlaceName = false,
+		PlaceID = false,
+		CreatorID = false,
+		CreatorType = false
+	}, "DATA FINISHED"})
+end
+
 pcall(function()
-	game:BindToClose(function()
-		MakeRequestAsync(Config.LocalHostIP, {{
-			ACCESS_KEY = Config.AccessKey,
-			ScriptName = false,
-			ScriptSource = false,
-			ScriptFullName = false,
-			ScriptClass = false,
-			PlaceName = false,
-			PlaceID = false,
-			CreatorID = false,
-			CreatorType = false
-		}, "DATA FINISHED"})
-	end)
+	game:BindToClose(OnGameClosed)
 end)
+
+local PluginActive = true
 
 pMaid:Give(StudioService:GetPropertyChangedSignal('ActiveScript'):Connect(UpdateData))
 pMaid:Give(onDataUpdated)
+
+pMaid:Give(function()
+	PluginActive = false
+	OnGameClosed()
+end)
 
 pMaid:Give(plugin.Unloading:Connect(function()
 	pMaid:Cleanup()
@@ -121,10 +130,10 @@ pMaid:Give(plugin.Deactivation:Connect(function()
 end))
 
 task.defer(function()
-	while true do
-		task.wait(10)
+	while PluginActive do
+		task.wait(6)
 		onDataUpdated:Fire()
 	end
 end)
 
-task.delay(2, UpdateData)
+task.delay(1.5, UpdateData)

@@ -35,7 +35,6 @@ local Callback = {}
 Callback.__index = Callback
 
 function Callback.New(SuperSignal, callbackFunction : (any) -> (any))
-
 	return setmetatable({
 		ClassName = "BaseSignalCallback",
 		Super = setmetatable({}, SuperSignal),
@@ -43,26 +42,30 @@ function Callback.New(SuperSignal, callbackFunction : (any) -> (any))
 		ID = HttpService:GenerateGUID(false),
 		_function = callbackFunction,
 	}, Callback)
-
 end
 
 function Callback:Trigger(...)
 	if not self.Active then
-		error("Trying to trigger a disconnected callback.")
+		warn("Trying to trigger a disconnected callback.")
+		return false
 	end
 	self._function(...)
+	return true
 end
 
 function Callback:Disconnect()
 	if not self.Active then
-		error("Trying to disconnect a disconnected callback.")
+		warn("Trying to disconnect a disconnected callback.")
+		return false
 	end
 	self.Active = false
 	if self.Super then
 		getmetatable(self.Super):RemoveCallback(Callback)
 	end
+	return true
 end
 
+-- // CLASS // --
 local Signal = {}
 Signal.__index = Signal
 

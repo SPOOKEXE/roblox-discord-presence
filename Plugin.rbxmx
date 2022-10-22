@@ -2,26 +2,26 @@
 	<Meta name="ExplicitAutoJoints">true</Meta>
 	<External>null</External>
 	<External>nil</External>
-	<Item class="Folder" referent="RBX3D61AE07C31A47C38E475DD6EB240953">
+	<Item class="Folder" referent="RBX09CB594FD3214F4086CA24CD28616023">
 		<Properties>
 			<BinaryString name="AttributesSerialize"></BinaryString>
 			<string name="Name">Plugin</string>
 			<int64 name="SourceAssetId">-1</int64>
 			<BinaryString name="Tags"></BinaryString>
 		</Properties>
-		<Item class="Folder" referent="RBX883E765C0B3C406A861497A01818E7B5">
+		<Item class="Folder" referent="RBXAC228F9E8D31475A822E388DB9882AAB">
 			<Properties>
 				<BinaryString name="AttributesSerialize"></BinaryString>
 				<string name="Name">Classes</string>
 				<int64 name="SourceAssetId">-1</int64>
 				<BinaryString name="Tags"></BinaryString>
 			</Properties>
-			<Item class="ModuleScript" referent="RBXBD94505C4DB34F0183402584C2710F1E">
+			<Item class="ModuleScript" referent="RBX82A5F0A87D914915BE12278BD0290DA7">
 				<Properties>
 					<BinaryString name="AttributesSerialize"></BinaryString>
 					<Content name="LinkedSource"><null></null></Content>
 					<string name="Name">Event</string>
-					<string name="ScriptGuid">{AC1AA348-93C9-4ADA-832B-FF0B7A9A5E6D}</string>
+					<string name="ScriptGuid">{D6857499-4696-4DC0-8A0A-1E6EED3489A4}</string>
 					<ProtectedString name="Source"><![CDATA[--[[
 	Example Code : Alternatives To BindableEvents
 	(allows Instance passing)
@@ -59,7 +59,6 @@ local Callback = {}
 Callback.__index = Callback
 
 function Callback.New(SuperSignal, callbackFunction : (any) -> (any))
-
 	return setmetatable({
 		ClassName = "BaseSignalCallback",
 		Super = setmetatable({}, SuperSignal),
@@ -67,26 +66,30 @@ function Callback.New(SuperSignal, callbackFunction : (any) -> (any))
 		ID = HttpService:GenerateGUID(false),
 		_function = callbackFunction,
 	}, Callback)
-
 end
 
 function Callback:Trigger(...)
 	if not self.Active then
-		error("Trying to trigger a disconnected callback.")
+		warn("Trying to trigger a disconnected callback.")
+		return false
 	end
 	self._function(...)
+	return true
 end
 
 function Callback:Disconnect()
 	if not self.Active then
-		error("Trying to disconnect a disconnected callback.")
+		warn("Trying to disconnect a disconnected callback.")
+		return false
 	end
 	self.Active = false
 	if self.Super then
 		getmetatable(self.Super):RemoveCallback(Callback)
 	end
+	return true
 end
 
+-- // CLASS // --
 local Signal = {}
 Signal.__index = Signal
 
@@ -194,12 +197,12 @@ return Signal
 					<BinaryString name="Tags"></BinaryString>
 				</Properties>
 			</Item>
-			<Item class="ModuleScript" referent="RBX196F3121C57F48AC820B359808665079">
+			<Item class="ModuleScript" referent="RBX5062774F6D1346D9827D2F380F5FDC92">
 				<Properties>
 					<BinaryString name="AttributesSerialize"></BinaryString>
 					<Content name="LinkedSource"><null></null></Content>
 					<string name="Name">Maid</string>
-					<string name="ScriptGuid">{C0128B83-DDE4-4234-93DD-3A6242329A2B}</string>
+					<string name="ScriptGuid">{B40B63BA-5BD1-4178-A85F-8723B42DE2FF}</string>
 					<ProtectedString name="Source"><![CDATA[
 local Maid = {}
 Maid.__index = Maid
@@ -218,8 +221,12 @@ function Maid:Cleanup()
 			task.defer(function()
 				_task:Destroy()
 			end)
-		elseif typeof(_task) == 'table' and _task.Destroy then
-			task.defer(_task.Destroy)
+		elseif typeof(_task) == 'table' then
+			if _task.Destroy then
+				task.defer(_task.Destroy)
+			elseif _task.Disconnect then
+				task.defer(_task.Disconnect)
+			end
 		else
 			warn('Invalid task type; ', typeof(_task), _task)
 		end
@@ -244,12 +251,12 @@ return Maid
 					<BinaryString name="Tags"></BinaryString>
 				</Properties>
 			</Item>
-			<Item class="ModuleScript" referent="RBXEC42E93502D54CF0A9DC5E3161AECD7F">
+			<Item class="ModuleScript" referent="RBX3F368AFE8A6C4ED192469EA2E6FBBA0B">
 				<Properties>
 					<BinaryString name="AttributesSerialize"></BinaryString>
 					<Content name="LinkedSource"><null></null></Content>
 					<string name="Name">Promise</string>
-					<string name="ScriptGuid">{273D06D3-CEDA-416B-B543-1B1D5A19FD63}</string>
+					<string name="ScriptGuid">{D4D5ABF3-308C-44F4-A5F3-0561577A0BBD}</string>
 					<ProtectedString name="Source"><![CDATA[--[[
 	An implementation of Promises similar to Promise/A+.
 ]]
@@ -2324,12 +2331,12 @@ return Promise
 				</Properties>
 			</Item>
 		</Item>
-		<Item class="ModuleScript" referent="RBX0092927664A842B380394CA371209454">
+		<Item class="ModuleScript" referent="RBXC946BC2B1F044F6EADC45E328E88BB79">
 			<Properties>
 				<BinaryString name="AttributesSerialize"></BinaryString>
 				<Content name="LinkedSource"><null></null></Content>
 				<string name="Name">Config</string>
-				<string name="ScriptGuid">{1EC1F812-2727-4473-90C7-F8D602BC57F0}</string>
+				<string name="ScriptGuid">{A56BDE01-DE4B-4537-A3F1-129DC563C6B3}</string>
 				<ProtectedString name="Source"><![CDATA[return {
     LocalHostIP = "http://127.0.0.1:255",
     AccessKey =  "2452341534252346246345",
@@ -2338,14 +2345,14 @@ return Promise
 				<BinaryString name="Tags"></BinaryString>
 			</Properties>
 		</Item>
-		<Item class="Script" referent="RBXEE646D282F4D4586A7608326A27291E6">
+		<Item class="Script" referent="RBX53FD756EA413461D9FFCD9B132B4C2DE">
 			<Properties>
 				<BinaryString name="AttributesSerialize"></BinaryString>
 				<bool name="Disabled">false</bool>
 				<Content name="LinkedSource"><null></null></Content>
 				<string name="Name">Plugin</string>
 				<token name="RunContext">0</token>
-				<string name="ScriptGuid">{B334B508-DC2D-47A5-A7D3-B873A41B88AF}</string>
+				<string name="ScriptGuid">{96E6CEA5-ECF8-4948-88E0-08CD9899D5F9}</string>
 				<ProtectedString name="Source"><![CDATA[local HttpService = game:GetService('HttpService')
 local StudioService = game:GetService('StudioService')
 local RunService = game:GetService('RunService')
@@ -2384,7 +2391,7 @@ function SetupConnections(script)
 		activeSourceMaid = nil
 	end
 	if script then
-		activeSourceMaid = Maid.new()
+		activeSourceMaid = Maid.New()
 		local LineCount : number = StringUtil:GetLineCount(script)
 		activeSourceMaid:Give(RunService.Heartbeat:Connect(function()
 			local newLineCount : number = StringUtil:GetLineCount(script)
@@ -2414,7 +2421,7 @@ function UpdateData()
 		}
 		onDataUpdated:Fire()
 	end):catch(function(_)
-
+		--warn(err)
 	end)
 end
 
@@ -2434,31 +2441,40 @@ onDataUpdated:Connect(function()
 		-- 	--warn(errMsg)
 		-- end
 		return hasResolved, ReturnData or errMsg
-	end):andThen(function(_)
+	end):andThen(function(_, _)
 		--print(succeeded, data)
 	end)
 end)
 
 local pMaid = Maid.New()
 
+local function OnGameClosed()
+	MakeRequestAsync(Config.LocalHostIP, {{
+		ACCESS_KEY = Config.AccessKey,
+		ScriptName = false,
+		ScriptSource = false,
+		ScriptFullName = false,
+		ScriptClass = false,
+		PlaceName = false,
+		PlaceID = false,
+		CreatorID = false,
+		CreatorType = false
+	}, "DATA FINISHED"})
+end
+
 pcall(function()
-	game:BindToClose(function()
-		MakeRequestAsync(Config.LocalHostIP, {{
-			ACCESS_KEY = Config.AccessKey,
-			ScriptName = false,
-			ScriptSource = false,
-			ScriptFullName = false,
-			ScriptClass = false,
-			PlaceName = false,
-			PlaceID = false,
-			CreatorID = false,
-			CreatorType = false
-		}, "DATA FINISHED"})
-	end)
+	game:BindToClose(OnGameClosed)
 end)
+
+local PluginActive = true
 
 pMaid:Give(StudioService:GetPropertyChangedSignal('ActiveScript'):Connect(UpdateData))
 pMaid:Give(onDataUpdated)
+
+pMaid:Give(function()
+	PluginActive = false
+	OnGameClosed()
+end)
 
 pMaid:Give(plugin.Unloading:Connect(function()
 	pMaid:Cleanup()
@@ -2469,30 +2485,30 @@ pMaid:Give(plugin.Deactivation:Connect(function()
 end))
 
 task.defer(function()
-	while true do
-		task.wait(10)
+	while PluginActive do
+		task.wait(6)
 		onDataUpdated:Fire()
 	end
 end)
 
-task.delay(2, UpdateData)]]></ProtectedString>
+task.delay(1.5, UpdateData)]]></ProtectedString>
 				<int64 name="SourceAssetId">-1</int64>
 				<BinaryString name="Tags"></BinaryString>
 			</Properties>
 		</Item>
-		<Item class="Folder" referent="RBXB3FF3A9414DB40A1B9A1AB9093359408">
+		<Item class="Folder" referent="RBXA98087F6F95845CFB18D51789AB135C8">
 			<Properties>
 				<BinaryString name="AttributesSerialize"></BinaryString>
 				<string name="Name">Utility</string>
 				<int64 name="SourceAssetId">-1</int64>
 				<BinaryString name="Tags"></BinaryString>
 			</Properties>
-			<Item class="ModuleScript" referent="RBX672AEE143BEB4A529354207A64D69F5D">
+			<Item class="ModuleScript" referent="RBX94D889629D934BE19010ACDAF33A8B65">
 				<Properties>
 					<BinaryString name="AttributesSerialize"></BinaryString>
 					<Content name="LinkedSource"><null></null></Content>
 					<string name="Name">Debounce</string>
-					<string name="ScriptGuid">{53207AA8-D692-4371-83DB-64F033F59EC0}</string>
+					<string name="ScriptGuid">{16311583-EFBC-4C30-8A54-EF56FA17A9D3}</string>
 					<ProtectedString name="Source"><![CDATA[
 local activeDebounces = {}
 
@@ -2528,12 +2544,12 @@ return Module
 					<BinaryString name="Tags"></BinaryString>
 				</Properties>
 			</Item>
-			<Item class="ModuleScript" referent="RBX49B1654B7C5F4CC1BAE7E436EADAC347">
+			<Item class="ModuleScript" referent="RBX395B158A4A204488AFF3E04D0A312CFC">
 				<Properties>
 					<BinaryString name="AttributesSerialize"></BinaryString>
 					<Content name="LinkedSource"><null></null></Content>
 					<string name="Name">Numbers</string>
-					<string name="ScriptGuid">{AE457BC3-91DC-4CE0-9464-F513211C9E1A}</string>
+					<string name="ScriptGuid">{49E0C87E-68D8-4D6F-8CAB-C6AD483762BF}</string>
 					<ProtectedString name="Source"><![CDATA[local Module = {}
 
 -- from number A to B with alpha t (0 -> 1)
@@ -2729,12 +2745,12 @@ return Module
 					<BinaryString name="Tags"></BinaryString>
 				</Properties>
 			</Item>
-			<Item class="ModuleScript" referent="RBXFA7EA3407A3F4B209E90700BF51F68DC">
+			<Item class="ModuleScript" referent="RBXEF6E22F1563545EDA5C77C65EF7CEBDC">
 				<Properties>
 					<BinaryString name="AttributesSerialize"></BinaryString>
 					<Content name="LinkedSource"><null></null></Content>
 					<string name="Name">String</string>
-					<string name="ScriptGuid">{801EA9E7-9366-4D53-AD3C-728882034031}</string>
+					<string name="ScriptGuid">{E2187AFC-ACB2-4714-94AB-6B1D364615AB}</string>
 					<ProtectedString name="Source"><![CDATA[
 local Module = {}
 
@@ -2809,12 +2825,12 @@ return Module
 					<BinaryString name="Tags"></BinaryString>
 				</Properties>
 			</Item>
-			<Item class="ModuleScript" referent="RBX7F9DB747153B41F4971CD8CB9F85A980">
+			<Item class="ModuleScript" referent="RBX6C8C94AA99004678A09BD2C75B628096">
 				<Properties>
 					<BinaryString name="AttributesSerialize"></BinaryString>
 					<Content name="LinkedSource"><null></null></Content>
 					<string name="Name">Table</string>
-					<string name="ScriptGuid">{30D61F9B-C1DF-4FC4-8751-F8B627F51267}</string>
+					<string name="ScriptGuid">{C763C63E-55C3-4744-8206-ED65B4E39BC9}</string>
 					<ProtectedString name="Source"><![CDATA[-- // Module // --
 local Module= {}
 
@@ -2920,12 +2936,12 @@ return Module
 					<BinaryString name="Tags"></BinaryString>
 				</Properties>
 			</Item>
-			<Item class="ModuleScript" referent="RBX8112547DCE7B4480BD0C121C5860CDAF">
+			<Item class="ModuleScript" referent="RBX1D4565E91AA547F09A4C9007D9E94713">
 				<Properties>
 					<BinaryString name="AttributesSerialize"></BinaryString>
 					<Content name="LinkedSource"><null></null></Content>
 					<string name="Name">Time</string>
-					<string name="ScriptGuid">{0FB62851-012B-4A50-879F-751C501B6F46}</string>
+					<string name="ScriptGuid">{98098491-A763-48BA-B5DC-C6E7D4257FC3}</string>
 					<ProtectedString name="Source"><![CDATA[local Module = {}
 
 function Module:Get()

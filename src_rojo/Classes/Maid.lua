@@ -16,8 +16,12 @@ function Maid:Cleanup()
 			task.defer(function()
 				_task:Destroy()
 			end)
-		elseif typeof(_task) == 'table' and _task.Destroy then
-			task.defer(_task.Destroy)
+		elseif typeof(_task) == 'table' then
+			if _task.Destroy then
+				task.defer(_task.Destroy)
+			elseif _task.Disconnect then
+				task.defer(_task.Disconnect)
+			end
 		else
 			warn('Invalid task type; ', typeof(_task), _task)
 		end
