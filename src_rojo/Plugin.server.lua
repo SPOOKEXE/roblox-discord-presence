@@ -71,23 +71,17 @@ function UpdateData()
 end
 
 onDataUpdated:Connect(function()
-	local hasResolved = false
-	local errMsg : string? = nil
 	if activePromise then
 		activePromise:cancel()
-		activePromise = nil
 	end
+	activePromise = nil
 	activePromise = Promise.try(function()
-		local ReturnData = nil
-		hasResolved, errMsg = pcall(function()
-			ReturnData = HttpService:JSONDecode(MakeRequestAsync(Config.LocalHostIP, {activeOutgoing, "DATA FINISHED"}).Body)
-		end)
-		-- if (not hasResolved) and errMsg then
-		-- 	--warn(errMsg)
-		-- end
-		return hasResolved, ReturnData or errMsg
+		local ReturnData = HttpService:JSONDecode(MakeRequestAsync(Config.LocalHostIP, {activeOutgoing, "DATA FINISHED"}).Body)
+		return hasResolved, ReturnData
 	end):andThen(function(_, _)
 		--print(succeeded, data)
+	end):timeout(5):catch(function(errMsg)
+		warn(errMsg)
 	end)
 end)
 
