@@ -28,34 +28,13 @@
 
 local HttpService = game:GetService('HttpService')
 
-type BaseIdentifier = { ClassName : string, Active : boolean, ID : string }
-
-export type CallbackClass = BaseIdentifier & {
-	Super : table,
-	_function : (any) -> (nil)
-}
-
-export type SignalClass = BaseIdentifier & {
-	-- directly related to each signal (edits/accesses the self)
-	_callbacks : { [number] : CallbackClass },
-
-	Fire : (any) ,
-	Wait : (number) ,
-	Connect : (any) ,
-	Disconnect : (nil),
-
-	-- All signals have these and are not directly related to the signal (does not edit/access self)
-	GetSignal : (string) -> (SignalClass?),
-	HideSignal : (string) -> (nil),
-}
-
-local activeSignals : { [number] : SignalClass } = {}
+local activeSignals = {}
 
 -- // Classes // --
 local Callback = {}
 Callback.__index = Callback
 
-function Callback.New(SuperSignal : SignalClass, callbackFunction : (any) -> (any)) : CallbackClass
+function Callback.New(SuperSignal, callbackFunction : (any) -> (any))
 
 	return setmetatable({
 		ClassName = "BaseSignalCallback",
@@ -67,14 +46,14 @@ function Callback.New(SuperSignal : SignalClass, callbackFunction : (any) -> (an
 
 end
 
-function Callback:Trigger(...) : nil
+function Callback:Trigger(...)
 	if not self.Active then
 		error("Trying to trigger a disconnected callback.")
 	end
 	self._function(...)
 end
 
-function Callback:Disconnect() : nil
+function Callback:Disconnect()
 	if not self.Active then
 		error("Trying to disconnect a disconnected callback.")
 	end
@@ -87,7 +66,7 @@ end
 local Signal = {}
 Signal.__index = Signal
 
-function Signal.New(customID : string?) : SignalClass
+function Signal.New(customID)
 	return setmetatable({
 		ClassName = "BaseSignal",
 		Active = true,
@@ -96,9 +75,9 @@ function Signal.New(customID : string?) : SignalClass
 	}, Signal)
 end
 
-function Signal:GetSignal(signalID : string?)
+function Signal:GetSignal(signalID)
 	assert(typeof(signalID) == "string", "Passed signalID is not a string.")
-	for i : number, signal : SignalClass in ipairs(activeSignals) do
+	for _, signal in ipairs(activeSignals) do
 		if signal.ID == signalID then
 			return signal
 		end
@@ -106,9 +85,9 @@ function Signal:GetSignal(signalID : string?)
 	return Signal.New(signalID)
 end
 
-function Signal:HideSignal(signalID : string?)
+function Signal:HideSignal(signalID)
 	assert(typeof(signalID) == "string", "Passed signalID is not a string.")
-	for i : number, signal : SignalClass in ipairs(activeSignals) do
+	for i, signal in ipairs(activeSignals) do
 		if signal.ID == signalID then
 			table.remove(activeSignals, i)
 			break
@@ -116,8 +95,8 @@ function Signal:HideSignal(signalID : string?)
 	end
 end
 
-function Signal:RemoveCallback(callback : CallbackClass) : nil
-	for i, callbackClass : CallbackClass in ipairs(self._callbacks) do
+function Signal:RemoveCallback(callback)
+	for i, callbackClass in ipairs(self._callbacks) do
 		if callback.ID == callbackClass.ID then
 			table.remove(self._callbacks, i)
 			break
@@ -129,17 +108,17 @@ function Signal:Fire(...)
 	if not self.Active then
 		error("Trying to fire a disconnected Signal.")
 	end
-	for i : number, callbackClass : CallbackClass in ipairs(self._callbacks) do
+	for _, callbackClass in ipairs(self._callbacks) do
 		callbackClass:Trigger(...)
 	end
 end
 
-function Signal:Wait(timePeriod : number?) : nil
+function Signal:Wait(timePeriod)
 	if not self.Active then
 		error("Trying to Wait on a disconnected Signal.")
 	end
 	timePeriod = typeof(timePeriod) == "number" and timePeriod or nil
-	local bindableWait : BindableEvent = Instance.new('BindableEvent')
+	local bindableWait = Instance.new('BindableEvent')
 	local callback; callback = self:Connect(function()
 		callback:Disconnect()
 		bindableWait:Fire()
@@ -151,15 +130,15 @@ function Signal:Wait(timePeriod : number?) : nil
 	end
 end
 
-function Signal:Connect(...) : any?
+function Signal:Connect(...)
 	if not self.Active then
 		error("Trying to connect a disconnected Signal.")
 	end
-	local callbacks : { [number] : CallbackClass } = {}
+	local callbacks = {}
 	local passed_arguments = {...}
-	for i : number, passed_arg : any in ipairs(passed_arguments) do
+	for _, passed_arg in ipairs(passed_arguments) do
 		if typeof(passed_arg) == "function" then
-			local new_callback : CallbackClass = Callback.New(self, passed_arg)
+			local new_callback = Callback.New(self, passed_arg)
 			table.insert(self._callbacks, new_callback)
 			table.insert(callbacks, new_callback)
 		end
@@ -167,7 +146,7 @@ function Signal:Connect(...) : any?
 	return unpack(callbacks)
 end
 
-function Signal:Disconnect() : nil
+function Signal:Disconnect()
 	if not self.Active then
 		error("Trying to disconnect a disconnected Signal.")
 	end
@@ -175,11 +154,11 @@ function Signal:Disconnect() : nil
 	self:HideSignal(self.ID)
 	self.Callbacks = nil
 	setmetatable(self, {
-		__index = function(...)
+		__index = function(_, _)
 			return nil
 		end,
-		__newindex = function(...)
-			error("Cannot edit locked metatable")
+		__newindex = function(_, _, _)
+			error("Cannot edit locked metatable.")
 		end,
 	})
 end

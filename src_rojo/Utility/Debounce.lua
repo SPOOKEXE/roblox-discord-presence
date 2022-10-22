@@ -1,20 +1,21 @@
 
-type Dictionary = { [string] : any }
-
-local activeDebounces : Dictionary = {}
+local activeDebounces = {}
 
 -- // Module // --
 local Module = {}
 
-function Module:Debounce(debounceName : string?, duration : number?)
+function Module:Debounce(debounceName, duration)
 	duration = typeof(duration) == 'number' and duration or 1
 	if typeof(debounceName) == 'string' then
 		if activeDebounces[debounceName] then
 			return false
 		end
-		activeDebounces[debounceName] = true
+		local ID = game:GetService('HttpService'):GenerateGUID(false)
+		activeDebounces[debounceName] = ID
 		task.delay(duration, function()
-			activeDebounces[debounceName] = nil
+			if activeDebounces[debounceName] == ID then
+				activeDebounces[debounceName] = ID
+			end
 		end)
 		return true
 	end
